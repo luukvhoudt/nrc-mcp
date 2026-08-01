@@ -1,0 +1,18 @@
+[package]
+name         = "nrc-cli"
+description   = "Command-line front end to the nrc-mcp geometry kernel"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+rust-version.workspace = true
+
+[[bin]]
+name = "nrc"
+path = "src/main.rs"
+
+[dependencies]
+nrc-core = { workspace = true }
+# JSON only, and only here. The kernel itself stays dependency-free (see
+# crates/nrc-core/Cargo.toml); a serialization format is a front-end concern.
+serde_json = "1"

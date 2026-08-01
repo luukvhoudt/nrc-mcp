@@ -1,0 +1,20 @@
+[package]
+name         = "nrc-py"
+description   = "Python bindings for the nrc-mcp geometry kernel"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+rust-version.workspace = true
+
+[lib]
+name       = "nrc_py"
+# cdylib for the Python extension module; rlib so `cargo test --all` can still compile it.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nrc-core = { workspace = true }
+# `extension-module` keeps libpython out of the link line, so the .so builds without
+# python-dev present. `abi3-py312` means one artefact works on 3.12 and every later 3.x,
+# which matters because the toolchain is pinned but a user's interpreter may not be.
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py312"] }

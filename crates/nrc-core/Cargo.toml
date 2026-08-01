@@ -1,0 +1,15 @@
+[package]
+name          = "nrc-core"
+description    = "Geometry kernel and .map I/O for nrc-mcp"
+version.workspace       = true
+edition.workspace       = true
+license.workspace       = true
+repository.workspace    = true
+rust-version.workspace  = true
+
+[dependencies]
+# Deliberately dependency-free. The kernel is the part of this project that must
+# never surprise anyone, and a plane-intersection bug arriving via a transitive
+# update is exactly the failure mode §13 warns about.
+
+[dev-dependencies]

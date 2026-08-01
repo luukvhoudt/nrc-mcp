@@ -1,0 +1,45 @@
+# mise
+mise.local.toml
+.env
+.mise/
+
+# rust
+/target/
+**/*.rs.bk
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# vendored upstream + game data
+/vendor/
+
+# The corpus is never committed. `corpus/real` is the user's own map sources, which are
+# not ours to redistribute; `corpus/regression` is upstream's, and `corpus/synthetic` is
+# generated. All three are reproduced by `mise run corpus:import` and `corpus:gen`, and the
+# manifest records absolute paths from whichever machine built it.
+/corpus/synthetic/
+/corpus/real/
+/corpus/regression/
+/corpus/MANIFEST.json
+
+# build artefacts
+/bench/results/
+/bench/difftest.json
+/out/
+# The compiled extension module, installed here by `mise run kernel:build`.
+/python/src/*.so
+
+# q3map2 leavings
+*.bsp
+*.prt
+*.srf
+*.lin
+*.pk3
+*.bak
+/**/*.pk3dir/

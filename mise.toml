@@ -1,0 +1,289 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+#
+# nrc-mcp — the ONLY build/run interface for this project (spec §1).
+#
+# Architectural rule: nrc-mcp never shells out to a raw command. It calls
+# `mise run <task> -- <args>`. `mise tasks --json` is exposed to the agent as the
+# MCP resource `nrc://tasks`, so capability discovery is free and adding a file
+# task in `mise-tasks/` grants a new agent ability with zero MCP code change.
+#
+# Task naming is namespaced and STABLE. Renaming a task is a breaking change to
+# the agent's action surface — treat it like an API change (§1.4).
+
+min_version = "2025.1.0"
+
+[tools]
+rust   = "latest"
+python = "3.12"
+uv     = "latest"
+
+[settings]
+# Precompiled CPython: a source build here costs ~10 minutes for no benefit.
+python.compile = false
+# File tasks in mise-tasks/ carry their own #MISE metadata headers.
+experimental = true
+
+[env]
+# Machine-specific paths (game install, engine binary, Blender) belong in
+# mise.local.toml, which is gitignored. Everything here is repo-relative and
+# therefore identical on every machine and in CI.
+NRC_ROOT        = "{{config_root}}"
+NRC_SRC         = "{{config_root}}/vendor/netradiant-custom"
+NRC_INSTALL     = "{{config_root}}/vendor/netradiant-custom/install"
+Q3MAP2          = "{{config_root}}/vendor/netradiant-custom/install/q3map2"
+# Upstream names this tool `mbspc`, not `bspc` — there is no `bspc` target.
+MBSPC           = "{{config_root}}/vendor/netradiant-custom/install/mbspc"
+MAP_CORPUS      = "{{config_root}}/corpus"
+NRC_PROFILE     = "urt43"
+NRC_BENCH_OUT   = "{{config_root}}/bench/results"
+# Overridden in mise.local.toml with a real Urban Terror installation.
+URT_BASEPATH    = "{{config_root}}/vendor/urt-basepath"
+PYTHONPATH      = "{{config_root}}/python/src"
+# Keep uv's venv inside the repo so every task sees the same interpreter.
+UV_PROJECT_ENVIRONMENT = "{{config_root}}/.venv"
+
+# No `[vars]` for q3map2 flags on purpose. A `{{env.X}}` template is expanded when the
+# config loads, which fails outright if the var is only defined in mise.local.toml, and
+# it interpolates unquoted — fatal here because the Urban Terror path contains a space
+# ("C:/Program Files/..."). Compile tasks therefore go through tools/q3map2.py, which
+# quotes its arguments and, on WSL, translates paths for the Windows q3map2 binary.
+
+# ---------------------------------------------------------------------------
+# bootstrap
+# ---------------------------------------------------------------------------
+
+[tasks.bootstrap]
+description = "One-shot dev environment setup"
+depends     = ["py:sync", "kernel:build", "corpus:gen", "corpus:import"]
+run         = "echo 'ready — try: mise run test'"
+
+[tasks.info]
+description = "Print resolved toolchain + paths (first thing to check when a task misbehaves)"
+run         = """
+echo "NRC_ROOT     = $NRC_ROOT"
+echo "NRC_SRC      = $NRC_SRC          exists=$([ -d "$NRC_SRC" ] && echo yes || echo no)"
+echo "Q3MAP2       = $Q3MAP2           exists=$([ -x "$Q3MAP2" ] && echo yes || echo no)"
+echo "MAP_CORPUS   = $MAP_CORPUS       maps=$(ls -1 "$MAP_CORPUS"/**/*.map 2>/dev/null | wc -l)"
+echo "NRC_PROFILE  = $NRC_PROFILE"
+echo "URT_BASEPATH = $URT_BASEPATH     exists=$([ -d "$URT_BASEPATH" ] && echo yes || echo no)"
+rustc --version; python --version; uv --version
+"""
+
+# ---------------------------------------------------------------------------
+# vendor:* — netradiant-custom (editor + q3map2 + bspc)
+# ---------------------------------------------------------------------------
+
+[tasks."vendor:clone"]
+description = "Clone Garux/netradiant-custom into vendor/"
+outputs     = ["{{env.NRC_SRC}}/Makefile"]
+run         = """
+if [ -d "$NRC_SRC/.git" ]; then
+  git -C "$NRC_SRC" fetch --depth 1 origin master && git -C "$NRC_SRC" reset --hard origin/master
+else
+  git clone --depth 1 https://github.com/Garux/netradiant-custom "$NRC_SRC"
+fi
+"""
+
+[tasks."vendor:build"]
+description = "Build netradiant-custom (Qt5 editor + q3map2 + mbspc)"
+depends     = ["vendor:clone"]
+dir         = "{{env.NRC_SRC}}"
+sources     = ["{{env.NRC_SRC}}/tools/**/*.c*", "{{env.NRC_SRC}}/libs/**/*.c*", "{{env.NRC_SRC}}/Makefile*"]
+outputs     = ["{{env.Q3MAP2}}"]
+run         = "make -j$(nproc) BUILD=release && make install"
+
+[tasks."vendor:build-tools"]
+description = "Build only q3map2 + mbspc (skips the Qt5 editor — what CI needs)"
+depends     = ["vendor:clone"]
+dir         = "{{env.NRC_SRC}}"
+outputs     = ["{{env.Q3MAP2}}"]
+run         = "make -j$(nproc) BUILD=release DEPENDENCIES_CHECK=off binaries-q3map2 binaries-mbspc"
+
+# ---------------------------------------------------------------------------
+# kernel:* — the Rust geometry kernel
+# ---------------------------------------------------------------------------
+
+[tasks."kernel:build"]
+description = "Build the Rust geometry kernel and install the Python extension"
+sources     = ["crates/**/*.rs", "Cargo.toml", "Cargo.lock"]
+outputs     = ["python/src/nrc_py.so", "target/release/nrc"]
+# The cdylib is named libnrc_py.so by cargo, but Python will only import it as nrc_py.so.
+# Copying rather than symlinking keeps the tree usable when target/ is cleaned.
+run = [
+  "cargo build --release",
+  "cp target/release/libnrc_py.so python/src/nrc_py.so",
+]
+
+[tasks."kernel:check"]
+description = "cargo check + clippy + fmt check on the kernel"
+run = [
+  "cargo fmt --all -- --check",
+  "cargo clippy --all-targets -- -D warnings",
+]
+
+[tasks."kernel:fmt"]
+description = "Format Rust sources"
+run         = "cargo fmt --all"
+
+[tasks."kernel:doc"]
+description = "Build and open kernel API docs"
+run         = "cargo doc --no-deps --open"
+
+# ---------------------------------------------------------------------------
+# py:* — the Python MCP shell
+# ---------------------------------------------------------------------------
+
+[tasks."py:sync"]
+description = "Install/refresh the Python environment"
+sources     = ["pyproject.toml", "uv.lock"]
+outputs     = [".venv/pyvenv.cfg"]
+run         = "uv sync --all-extras"
+
+[tasks."py:check"]
+description = "Lint + type-check the Python layer"
+depends     = ["py:sync"]
+run = [
+  "uv run ruff check python tools",
+  "uv run ruff format --check python tools",
+]
+
+[tasks."py:fmt"]
+description = "Format Python sources"
+run         = "uv run ruff format python tools && uv run ruff check --fix python tools"
+
+# ---------------------------------------------------------------------------
+# corpus:* — test maps
+# ---------------------------------------------------------------------------
+
+[tasks."corpus:gen"]
+description = "Generate the synthetic .map corpus (all brush formats, patches, degenerates)"
+sources     = ["tools/gen_corpus.py"]
+outputs     = ["{{env.MAP_CORPUS}}/synthetic/.stamp"]
+run         = "uv run python tools/gen_corpus.py --out $MAP_CORPUS/synthetic"
+
+[tasks."corpus:fetch"]
+description = "Fetch released UrT .map sources into corpus/real (requires corpus/sources.txt)"
+run         = "uv run python tools/fetch_corpus.py --out $MAP_CORPUS/real"
+
+[tasks."corpus:stats"]
+description = "Summarize the corpus: map count, brush/patch/entity totals, formats seen"
+depends     = ["kernel:build"]
+run         = "uv run python tools/corpus_stats.py --corpus $MAP_CORPUS"
+
+# ---------------------------------------------------------------------------
+# test:* — test:diff is THE gate (§3.3)
+# ---------------------------------------------------------------------------
+
+[tasks."test:unit"]
+description = "Rust + Python unit tests"
+depends     = ["kernel:build"]
+run = [
+  "cargo test --all",
+  "uv run pytest python/tests -q",
+]
+
+[tasks."test:diff"]
+description = "Differential round-trip harness — THE gate (§3.3)"
+depends     = ["kernel:build", "corpus:gen"]
+run         = "uv run python tools/difftest.py --corpus $MAP_CORPUS"
+
+[tasks."test:validators"]
+description = "Validator precision/recall against the labelled corpus"
+depends     = ["kernel:build"]
+run         = "uv run pytest python/tests/test_validators.py -q"
+
+[tasks."test:seam"]
+description = "Portability lint: fail if UrT-specific strings leak outside profiles/ + corpus/ (§7.4)"
+run         = "uv run python tools/seam_lint.py"
+
+[tasks.test]
+description = "Full test suite"
+depends     = ["test:unit", "test:diff", "test:validators", "test:seam"]
+run         = "echo 'all green'"
+
+[tasks.ci]
+description = "Everything CI runs, in CI order"
+depends     = ["kernel:check", "py:check", "test"]
+run         = "echo 'ci green'"
+
+# ---------------------------------------------------------------------------
+# compile:* — q3map2 presets (§6.1)
+# ---------------------------------------------------------------------------
+
+[tasks."compile:draft"]
+description = "Fast geometry-only compile (seconds) — geometry check"
+usage       = 'arg "<map>" help="path to .map"'
+run         = "uv run python tools/q3map2.py --preset draft -- {{arg(name='map')}}"
+
+[tasks."compile:iterate"]
+description = "Playable test build: fast vis + fast light"
+usage       = 'arg "<map>" help="path to .map"'
+run         = "uv run python tools/q3map2.py --preset iterate -- {{arg(name='map')}}"
+
+[tasks."compile:quality"]
+description = "Review build: full vis, bounced light"
+usage       = 'arg "<map>" help="path to .map"'
+run         = "uv run python tools/q3map2.py --preset quality -- {{arg(name='map')}}"
+
+[tasks."compile:final"]
+description = "Release build: full vis with portal file, 8 bounces"
+usage       = 'arg "<map>" help="path to .map"'
+run         = "uv run python tools/q3map2.py --preset final -- {{arg(name='map')}}"
+
+[tasks."bsp:json-unpack"]
+description = "Dump a .bsp to JSON for BSP introspection (§6.2)"
+usage       = 'arg "<bsp>" help="path to .bsp"'
+run         = "uv run python tools/q3map2.py --json-unpack -- {{arg(name='bsp')}}"
+
+[tasks."corpus:import"]
+description = "Copy real .map sources (game install + upstream regression tests) into corpus/"
+run         = "uv run python tools/import_corpus.py"
+
+# ---------------------------------------------------------------------------
+# mcp:* — the server itself
+# ---------------------------------------------------------------------------
+
+[tasks."mcp:serve"]
+description = "Run the nrc-mcp server on stdio"
+depends     = ["kernel:build"]
+run         = "uv run python -m nrc_mcp"
+
+[tasks."mcp:inspect"]
+description = "Launch the MCP inspector against the server"
+depends     = ["kernel:build"]
+run         = "npx @modelcontextprotocol/inspector uv run python -m nrc_mcp"
+
+[tasks."mcp:tools"]
+description = "List the MCP tool/resource/prompt surface without starting a client"
+depends     = ["kernel:build"]
+run         = "uv run python -m nrc_mcp --describe"
+
+# ---------------------------------------------------------------------------
+# bench:* / selfdev:* — §11. Self-dev is opt-in and rate-limited by design.
+# ---------------------------------------------------------------------------
+
+[tasks.bench]
+description = "Run the fitness suite and write bench/results/<sha>.json (§11.1)"
+depends     = ["kernel:build"]
+run         = "uv run python tools/bench.py --all --out $NRC_BENCH_OUT"
+
+[tasks."selfdev:protected"]
+description = "List protected paths and verify their hash pins (§11.4)"
+run         = "uv run python tools/protected.py --verify"
+
+# ---------------------------------------------------------------------------
+# pr:* — the living PR plan (§10)
+# ---------------------------------------------------------------------------
+
+[tasks."pr:watch"]
+description = "Poll upstream for drift; hash include/*.h signatures the bridge binds to (§10.1)"
+run         = "uv run python tools/pr_watch.py --state docs/upstream-state.json"
+
+# ---------------------------------------------------------------------------
+# watch
+# ---------------------------------------------------------------------------
+
+[tasks.watch]
+description = "Recompile draft + revalidate on .map change"
+usage       = 'arg "<map>" help="path to .map"'
+run         = "mise watch -t compile:draft -t test:diff -- {{arg(name='map')}}"

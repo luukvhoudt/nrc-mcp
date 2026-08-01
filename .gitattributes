@@ -1,0 +1,26 @@
+# This project's foundational guarantee is that a `.map` round-trips byte for byte, and its
+# test corpus contains files that deliberately use CRLF and files that deliberately end
+# without a newline. Git's autocrlf would rewrite exactly those bytes on checkout and turn
+# the differential gate into a test of the user's git configuration.
+#
+# So: map and BSP data are never converted, and source is normalized to LF (matching
+# upstream netradiant-custom's .editorconfig).
+
+*.map   -text -diff
+*.bsp   binary
+*.prt   -text
+*.srf   -text
+*.pk3   binary
+*.ent   -text
+*.def   -text
+
+*.rs    text eol=lf
+*.py    text eol=lf
+*.toml  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.lock  text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf

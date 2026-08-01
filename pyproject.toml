@@ -1,0 +1,49 @@
+[project]
+name = "nrc-mcp"
+version = "0.1.0"
+description = "MCP server for authoring, optimizing and shipping NetRadiant-custom levels"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "GPL-2.0-or-later" }
+
+dependencies = [
+    # The MCP surface. FastMCP is the reference Python implementation.
+    "mcp>=1.2",
+    # Profile data (profiles/*.yaml) is the §7.4 seam — YAML is the interchange format.
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+nrc-mcp = "nrc_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/src/nrc_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Generated and vendored trees are not ours to lint.
+extend-exclude = ["vendor", "target", "corpus", "out", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    # Long lines inside prose docstrings are more readable than forced wraps.
+    "E501",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+# The kernel binary and corpus live at the repo root; tests locate them from there.
+pythonpath = ["python/src"]
+addopts = "-q"

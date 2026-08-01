@@ -1,0 +1,88 @@
+name: ci
+
+# CI runs the same `mise run` lines a developer runs (§1.2, "CI parity"). If a step here
+# needs a flag a human would not use, that is a smell to fix in the task, not here.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel:
+    name: kernel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Lint and type-check the kernel
+        run: mise run kernel:check
+
+      - name: Unit tests
+        run: mise run test:unit
+
+  gate:
+    # The differential harness is THE gate (§3.3). It runs on Linux only because the corpus
+    # is identical everywhere and the check is on our own bytes, not the platform's.
+    name: differential gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: gate-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build kernel
+        run: mise run kernel:build
+
+      - name: Synthetic corpus
+        run: mise run corpus:gen
+
+      - name: Import upstream regression maps
+        # The real UrT maps live on a developer's machine and are not redistributable, but
+        # upstream's 18 pathological regression maps are in-tree and are the better half of
+        # the degenerate-case coverage anyway.
+        run: mise run corpus:import
+
+      - name: Differential round-trip gate
+        # q3map2 is absent here, so the semantic half reports "skipped" rather than
+        # pretending to pass. The syntactic half is the strong check and runs in full.
+        run: mise run test:diff
+
+      - name: Portability seam lint
+        run: mise run test:seam
+
+      - name: Python lint
+        run: mise run py:check
