@@ -29,12 +29,13 @@ levels while testing that it does not corrupt maps would be difficult to explain
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
 import stat
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # Editor leavings that duplicate a real source without adding format coverage.
@@ -55,10 +56,8 @@ def repo_root() -> Path:
 
 def make_read_only(p: Path) -> None:
     """Drop write bits. Best-effort: a DrvFs mount may not honour chmod."""
-    try:
+    with contextlib.suppress(OSError):
         p.chmod(p.stat().st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
-    except OSError:
-        pass
 
 
 def copy_in(src: Path, dest_dir: Path, source_label: str, out: list[Imported]) -> None:
@@ -66,10 +65,8 @@ def copy_in(src: Path, dest_dir: Path, source_label: str, out: list[Imported]) -
     dest = dest_dir / src.name
     # Overwriting a read-only destination needs the write bit back first.
     if dest.exists():
-        try:
+        with contextlib.suppress(OSError):
             dest.chmod(dest.stat().st_mode | stat.S_IWUSR)
-        except OSError:
-            pass
     shutil.copyfile(src, dest)
     make_read_only(dest)
     out.append(
@@ -120,10 +117,8 @@ def import_regression_maps(root: Path, out: list[Imported]) -> list[str]:
         target = dest / f"{label}__{m.name}" if label != m.stem else dest / m.name
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
-            try:
+            with contextlib.suppress(OSError):
                 target.chmod(target.stat().st_mode | stat.S_IWUSR)
-            except OSError:
-                pass
         shutil.copyfile(m, target)
         make_read_only(target)
         out.append(

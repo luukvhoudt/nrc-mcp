@@ -108,8 +108,13 @@ fn fail(msg: &str) -> ExitCode {
 
 fn read(path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    String::from_utf8(bytes)
-        .map_err(|e| format!("{} is not UTF-8 (byte {})", path.display(), e.utf8_error().valid_up_to()))
+    String::from_utf8(bytes).map_err(|e| {
+        format!(
+            "{} is not UTF-8 (byte {})",
+            path.display(),
+            e.utf8_error().valid_up_to()
+        )
+    })
 }
 
 fn cmd_roundtrip(files: &[PathBuf], quiet: bool) -> Result<(Value, ExitCode), String> {
@@ -161,7 +166,11 @@ fn cmd_roundtrip(files: &[PathBuf], quiet: bool) -> Result<(Value, ExitCode), St
             files.len()
         );
     }
-    let code = if failed == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) };
+    let code = if failed == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    };
     Ok((json!({"results": out, "failed": failed}), code))
 }
 
@@ -201,7 +210,10 @@ fn cmd_stats(files: &[PathBuf], grid: i64) -> Result<(Value, ExitCode), String> 
 }
 
 fn cmd_validate(files: &[PathBuf], grid: i64, quiet: bool) -> Result<(Value, ExitCode), String> {
-    let t = Thresholds { grid, ..Default::default() };
+    let t = Thresholds {
+        grid,
+        ..Default::default()
+    };
     let mut out = Vec::new();
     let mut total_errors = 0usize;
 
@@ -243,7 +255,11 @@ fn cmd_validate(files: &[PathBuf], grid: i64, quiet: bool) -> Result<(Value, Exi
         }
     }
 
-    let code = if total_errors == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) };
+    let code = if total_errors == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    };
     Ok((json!({"results": out, "errors": total_errors}), code))
 }
 

@@ -28,7 +28,10 @@ pub struct Num {
 impl Num {
     /// A number parsed from source, preserving `text` for output.
     pub fn parsed(text: &str, value: f64) -> Self {
-        Self { value, text: Some(text.into()) }
+        Self {
+            value,
+            text: Some(text.into()),
+        }
     }
 
     /// A synthesized number, formatted canonically on output.
@@ -148,7 +151,11 @@ mod tests {
     fn canonical_formatting_prefers_integers() {
         assert_eq!(fmt_f64(0.0), "0");
         assert_eq!(fmt_f64(1.0), "1");
-        assert_eq!(fmt_f64(10.0), "10", "stripping zeroes must stop at the decimal point");
+        assert_eq!(
+            fmt_f64(10.0),
+            "10",
+            "stripping zeroes must stop at the decimal point"
+        );
         assert_eq!(fmt_f64(-64.0), "-64");
         assert_eq!(fmt_f64(0.5), "0.5");
         assert_eq!(fmt_f64(0.25), "0.25");
@@ -217,7 +224,16 @@ mod tests {
     fn values_within_ten_decimals_round_trip_exactly() {
         // Everything an authoring grid produces, plus the texture-matrix scales that
         // appear in real maps (2^-7 and friends).
-        for v in [0.1, 0.5, 1e-5, 123456.789, -0.0078125, 0.0009765625, -64.0, 0.0] {
+        for v in [
+            0.1,
+            0.5,
+            1e-5,
+            123456.789,
+            -0.0078125,
+            0.0009765625,
+            -64.0,
+            0.0,
+        ] {
             let s = fmt_f64(v);
             let back: f64 = s.parse().unwrap();
             assert_eq!(back, v, "{s} did not round-trip");

@@ -42,9 +42,7 @@ def load(profile_id: str) -> dict[str, Any]:
     try:
         import yaml
     except ImportError as e:  # pragma: no cover - environment problem, not logic
-        raise ProfileError(
-            "pyyaml is required to read profiles. Run: mise run py:sync"
-        ) from e
+        raise ProfileError("pyyaml is required to read profiles. Run: mise run py:sync") from e
 
     path = profiles_dir() / f"{profile_id}.yaml"
     if not path.is_file():

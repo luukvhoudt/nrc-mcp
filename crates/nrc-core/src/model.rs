@@ -188,11 +188,15 @@ pub struct Patch {
 
 impl Patch {
     pub fn width(&self) -> usize {
-        self.header.first().map_or(0, |n| n.value().max(0.0) as usize)
+        self.header
+            .first()
+            .map_or(0, |n| n.value().max(0.0) as usize)
     }
 
     pub fn height(&self) -> usize {
-        self.header.get(1).map_or(0, |n| n.value().max(0.0) as usize)
+        self.header
+            .get(1)
+            .map_or(0, |n| n.value().max(0.0) as usize)
     }
 
     /// True if the declared dimensions match the control points actually present.
@@ -522,7 +526,10 @@ mod tests {
     fn off_grid_face_has_no_exact_plane() {
         let f = face([[0.0, 0.0, 0.5], [64.0, 0.0, 0.5], [0.0, 64.0, 0.5]]);
         assert!(f.plane().is_some(), "float plane is still available");
-        assert!(f.iplane().is_none(), "exact plane must refuse off-grid input");
+        assert!(
+            f.iplane().is_none(),
+            "exact plane must refuse off-grid input"
+        );
         assert!(!f.is_on_grid(1.0));
         assert!(f.is_on_grid(0.5));
     }

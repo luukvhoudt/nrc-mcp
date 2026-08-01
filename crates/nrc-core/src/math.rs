@@ -187,7 +187,10 @@ impl Plane {
     /// Returns `None` when the points are collinear or coincident, i.e. define no plane.
     pub fn from_points(a: Vec3, b: Vec3, c: Vec3) -> Option<Plane> {
         let normal = (c - a).cross(b - a).normalized()?;
-        Some(Plane { normal, dist: normal.dot(a) })
+        Some(Plane {
+            normal,
+            dist: normal.dot(a),
+        })
     }
 
     /// Signed distance from the plane; positive is in front (outside the brush).
@@ -196,7 +199,10 @@ impl Plane {
     }
 
     pub fn flipped(&self) -> Plane {
-        Plane { normal: -self.normal, dist: -self.dist }
+        Plane {
+            normal: -self.normal,
+            dist: -self.dist,
+        }
     }
 
     /// True if two planes are the same plane to q3map2's tolerances — which is the
@@ -252,8 +258,16 @@ impl Aabb {
     }
 
     pub fn extend(&mut self, p: Vec3) {
-        self.min = vec3(self.min.x.min(p.x), self.min.y.min(p.y), self.min.z.min(p.z));
-        self.max = vec3(self.max.x.max(p.x), self.max.y.max(p.y), self.max.z.max(p.z));
+        self.min = vec3(
+            self.min.x.min(p.x),
+            self.min.y.min(p.y),
+            self.min.z.min(p.z),
+        );
+        self.max = vec3(
+            self.max.x.max(p.x),
+            self.max.y.max(p.y),
+            self.max.z.max(p.z),
+        );
     }
 
     pub fn union(mut self, o: Aabb) -> Aabb {
@@ -321,18 +335,24 @@ mod tests {
     fn plane_from_points_normal_points_outward() {
         // A floor at z=0. Radiant lists the points so the normal faces +Z (up, out of
         // the solid below it).
-        let p = Plane::from_points(vec3(0.0, 0.0, 0.0), vec3(64.0, 0.0, 0.0), vec3(0.0, 64.0, 0.0))
-            .unwrap();
+        let p = Plane::from_points(
+            vec3(0.0, 0.0, 0.0),
+            vec3(64.0, 0.0, 0.0),
+            vec3(0.0, 64.0, 0.0),
+        )
+        .unwrap();
         assert_eq!(p.normal, vec3(0.0, 0.0, -1.0));
         assert_eq!(p.dist, 0.0);
     }
 
     #[test]
     fn collinear_points_define_no_plane() {
-        assert!(
-            Plane::from_points(vec3(0.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(2.0, 0.0, 0.0))
-                .is_none()
-        );
+        assert!(Plane::from_points(
+            vec3(0.0, 0.0, 0.0),
+            vec3(1.0, 0.0, 0.0),
+            vec3(2.0, 0.0, 0.0)
+        )
+        .is_none());
         assert!(Plane::from_points(Vec3::ZERO, Vec3::ZERO, Vec3::ZERO).is_none());
     }
 
@@ -341,7 +361,10 @@ mod tests {
         let px = Plane::new(vec3(1.0, 0.0, 0.0), 16.0);
         let py = Plane::new(vec3(0.0, 1.0, 0.0), 32.0);
         let pz = Plane::new(vec3(0.0, 0.0, 1.0), 48.0);
-        assert_eq!(Plane::intersect3(&px, &py, &pz).unwrap(), vec3(16.0, 32.0, 48.0));
+        assert_eq!(
+            Plane::intersect3(&px, &py, &pz).unwrap(),
+            vec3(16.0, 32.0, 48.0)
+        );
     }
 
     #[test]

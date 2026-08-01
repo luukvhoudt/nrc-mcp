@@ -119,7 +119,9 @@ def run_syntactic(nrc: Path, maps: list[Path]) -> dict[str, Result]:
     """One `nrc roundtrip` call over the whole corpus."""
     proc = subprocess.run(
         [str(nrc), "roundtrip", "--quiet", *[str(m) for m in maps]],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if not proc.stdout.strip():
         raise SystemExit(f"nrc roundtrip produced no output; stderr:\n{proc.stderr}")
@@ -162,10 +164,13 @@ def q3map2_available() -> tuple[bool, str]:
 def compile_and_unpack(root: Path, map_path: Path, workdir: Path) -> Path:
     """Compile a .map and unpack its BSP, returning the lump directory."""
     env = dict(os.environ, NRC_ROOT=str(workdir))
-    for stage in (["--preset", "draft"], ):
+    for stage in (["--preset", "draft"],):
         proc = subprocess.run(
             [sys.executable, str(root / "tools" / "q3map2.py"), *stage, str(map_path)],
-            capture_output=True, text=True, check=False, env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"draft compile failed: {proc.stderr.strip()[:400]}")
@@ -179,7 +184,10 @@ def compile_and_unpack(root: Path, map_path: Path, workdir: Path) -> Path:
 
     proc = subprocess.run(
         [sys.executable, str(root / "tools" / "q3map2.py"), "--json-unpack", str(bsp)],
-        capture_output=True, text=True, check=False, env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"json unpack failed: {proc.stderr.strip()[:400]}")
@@ -219,8 +227,9 @@ def compare_lumps(a: Path, b: Path) -> list[str]:
     return diffs
 
 
-def run_semantic(root: Path, nrc: Path, results: dict[str, Result], maps: list[Path],
-                 limit: int) -> None:
+def run_semantic(
+    root: Path, nrc: Path, results: dict[str, Result], maps: list[Path], limit: int
+) -> None:
     ok, why = q3map2_available()
     if not ok:
         for r in results.values():
@@ -252,7 +261,9 @@ def run_semantic(root: Path, nrc: Path, results: dict[str, Result], maps: list[P
                 shutil.copyfile(m, resaved)
                 proc = subprocess.run(
                     [str(nrc), "normalize", "--write", str(resaved)],
-                    capture_output=True, text=True, check=False,
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
                 if proc.returncode != 0:
                     raise RuntimeError(f"normalize failed: {proc.stderr.strip()[:200]}")
@@ -272,14 +283,18 @@ def run_semantic(root: Path, nrc: Path, results: dict[str, Result], maps: list[P
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--corpus", type=Path, default=None, help="corpus directory")
     ap.add_argument("--limit", type=int, default=None, help="only the first N maps")
-    ap.add_argument("--semantic-limit", type=int, default=6,
-                    help="how many maps to compile for the semantic check (0 disables)")
-    ap.add_argument("--no-semantic", action="store_true",
-                    help="syntactic check only")
+    ap.add_argument(
+        "--semantic-limit",
+        type=int,
+        default=6,
+        help="how many maps to compile for the semantic check (0 disables)",
+    )
+    ap.add_argument("--no-semantic", action="store_true", help="syntactic check only")
     ap.add_argument("--json", type=Path, default=None, help="also write a JSON report here")
     args = ap.parse_args()
 
@@ -292,8 +307,7 @@ def main() -> int:
     maps = collect_maps(corpus, args.limit)
     if not maps:
         raise SystemExit(
-            f"no .map files under {corpus} — run `mise run corpus:import` and "
-            "`mise run corpus:gen`"
+            f"no .map files under {corpus} — run `mise run corpus:import` and `mise run corpus:gen`"
         )
 
     print(f"differential harness: {len(maps)} map(s) under {corpus}")
@@ -321,18 +335,25 @@ def main() -> int:
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps(
-            {
-                "corpus": str(corpus),
-                "excluded_lumps": EXCLUDED_LUMPS,
-                "results": [vars(r) for r in results.values()],
-            }, indent=2) + "\n")
+        args.json.write_text(
+            json.dumps(
+                {
+                    "corpus": str(corpus),
+                    "excluded_lumps": EXCLUDED_LUMPS,
+                    "results": [vars(r) for r in results.values()],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
         print(f"  report: {args.json}")
 
     sem_bad = [r for r in results.values() if r.semantic in ("differs", "error")]
     if syn_fail or sem_bad:
-        print("\nGATE FAILED — nothing downstream of the kernel should be trusted until "
-              "this is green (§3.3).")
+        print(
+            "\nGATE FAILED — nothing downstream of the kernel should be trusted until "
+            "this is green (§3.3)."
+        )
         return 1
     print("\nGATE GREEN")
     return 0

@@ -42,7 +42,11 @@ impl PyMap {
     #[staticmethod]
     fn parse(source: &str) -> PyResult<Self> {
         let inner = parse_map(source).map_err(err)?;
-        Ok(Self { inner, original: source.to_string(), path: None })
+        Ok(Self {
+            inner,
+            original: source.to_string(),
+            path: None,
+        })
     }
 
     /// Load from disk.
@@ -57,7 +61,11 @@ impl PyMap {
             ))
         })?;
         let inner = parse_map(&source).map_err(|e| err(format!("{}: {e}", path.display())))?;
-        Ok(Self { inner, original: source, path: Some(path) })
+        Ok(Self {
+            inner,
+            original: source,
+            path: Some(path),
+        })
     }
 
     /// Serialize back to `.map` source.
@@ -100,7 +108,10 @@ impl PyMap {
             let diff = PyDict::new(py);
             diff.set_item("line", line)?;
             diff.set_item("byte_offset", offset)?;
-            diff.set_item("expected", self.original.lines().nth(line - 1).unwrap_or(""))?;
+            diff.set_item(
+                "expected",
+                self.original.lines().nth(line - 1).unwrap_or(""),
+            )?;
             diff.set_item("actual", out.lines().nth(line - 1).unwrap_or(""))?;
             d.set_item("first_difference", diff)?;
         }
@@ -127,7 +138,10 @@ impl PyMap {
         d.set_item("unevaluated_brushes", s.unevaluated_brushes)?;
         d.set_item(
             "texdef_kinds",
-            s.texdef_kinds.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
+            s.texdef_kinds
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>(),
         )?;
 
         let patch_kinds = PyDict::new(py);
@@ -188,7 +202,10 @@ impl PyMap {
                 )))
             }
         };
-        let t = Thresholds { grid, ..Default::default() };
+        let t = Thresholds {
+            grid,
+            ..Default::default()
+        };
         let report = validate_map(&self.inner, &t);
 
         let findings = PyList::empty(py);
@@ -299,7 +316,10 @@ impl PyMap {
         d.set_item("faces", b.faces.len())?;
         d.set_item(
             "shaders",
-            b.faces.iter().map(|f| f.shader.as_str()).collect::<Vec<_>>(),
+            b.faces
+                .iter()
+                .map(|f| f.shader.as_str())
+                .collect::<Vec<_>>(),
         )?;
         match nrc_core::brush_geometry(&b.faces) {
             Err(deg) => {

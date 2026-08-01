@@ -148,7 +148,8 @@ impl Default for Thresholds {
 
 const SRC_SPEC: &str = "nrc-mcp spec §4.1 post-conditions";
 const SRC_Q3MAP2: &str = "q3map2 map.cpp RemoveDuplicateBrushPlanes";
-const SRC_UPSTREAM_PATCH: &str = "netradiant-custom plugins/mapq3/plugin.cpp MapQ3API::parsePrimitive";
+const SRC_UPSTREAM_PATCH: &str =
+    "netradiant-custom plugins/mapq3/plugin.cpp MapQ3API::parsePrimitive";
 const SRC_WORLD: &str = "q3map2 MAX_WORLD_COORD";
 
 /// Validate a whole map.
@@ -449,9 +450,11 @@ pub fn grid_alignment(map: &Map, grid: i64) -> (usize, usize) {
 /// Whether every plane point in the map is an exact integer within world bounds.
 pub fn all_points_exact(map: &Map) -> bool {
     map.all_brushes().all(|b| {
-        b.faces
-            .iter()
-            .all(|f| f.point_vecs().iter().all(|p| IVec3::try_from_vec3(*p).is_some()))
+        b.faces.iter().all(|f| {
+            f.point_vecs()
+                .iter()
+                .all(|p| IVec3::try_from_vec3(*p).is_some())
+        })
     })
 }
 
@@ -498,7 +501,11 @@ mod tests {
     fn a_clean_box_produces_no_findings() {
         let m = world(&box_brush(64, 64));
         let r = validate_map(&m, &Thresholds::default());
-        assert!(r.findings.is_empty(), "unexpected findings: {:#?}", r.findings);
+        assert!(
+            r.findings.is_empty(),
+            "unexpected findings: {:#?}",
+            r.findings
+        );
         assert!(!r.has_errors());
     }
 
@@ -519,9 +526,11 @@ mod tests {
 
         // A sub-unit brush cannot be expressed on the integer grid at all, so the
         // stronger finding is that it is off-grid — which is the honest report.
-        let mut t2 = t;
-        t2.min_thickness_error = 8.0;
-        t2.min_thickness_warning = 16.0;
+        let t2 = Thresholds {
+            min_thickness_error: 8.0,
+            min_thickness_warning: 16.0,
+            ..t
+        };
         let err = validate_map(&world(&box_brush(64, 4)), &t2);
         assert!(codes(&err).contains(&"BRUSH_TOO_THIN"), "{:?}", codes(&err));
         assert!(err.has_errors());
@@ -530,8 +539,10 @@ mod tests {
     #[test]
     fn off_grid_geometry_is_an_error_not_a_warning() {
         // §3.2: "Off-grid vertices are a validation error, not a warning."
-        let mut t = Thresholds::default();
-        t.grid = 16;
+        let t = Thresholds {
+            grid: 16,
+            ..Default::default()
+        };
         let r = validate_map(&world(&box_brush(8, 8)), &t);
         let f = r
             .findings
@@ -655,7 +666,10 @@ mod tests {
 
     #[test]
     fn an_unrecognized_primitive_is_reported_as_unanalysable_not_broken() {
-        let r = validate_map(&world("{\nfutureDef\n{\n( 0 0 0 )\n}\n}\n"), &Thresholds::default());
+        let r = validate_map(
+            &world("{\nfutureDef\n{\n( 0 0 0 )\n}\n}\n"),
+            &Thresholds::default(),
+        );
         let f = r
             .findings
             .iter()
@@ -667,8 +681,10 @@ mod tests {
 
     #[test]
     fn findings_report_a_location_a_human_can_act_on() {
-        let mut t = Thresholds::default();
-        t.grid = 16;
+        let t = Thresholds {
+            grid: 16,
+            ..Default::default()
+        };
         let r = validate_map(&world(&box_brush(8, 8)), &t);
         let f = &r.findings[0];
         assert_eq!(f.location.entity, Some(0));
@@ -678,12 +694,18 @@ mod tests {
 
     #[test]
     fn sorting_puts_errors_first() {
-        let mut t = Thresholds::default();
-        t.grid = 16;
-        t.min_thickness_warning = 16.0;
+        let t = Thresholds {
+            grid: 16,
+            min_thickness_warning: 16.0,
+            ..Default::default()
+        };
         let r = validate_map(&world(&box_brush(8, 8)), &t);
         let s = r.sorted();
-        assert!(s.len() >= 2, "expected several findings, got {:?}", codes(&r));
+        assert!(
+            s.len() >= 2,
+            "expected several findings, got {:?}",
+            codes(&r)
+        );
         assert_eq!(s[0].severity, Severity::Error);
     }
 

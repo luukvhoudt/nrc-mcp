@@ -41,10 +41,35 @@ ALLOWED_DIRS = {"docs", "profiles", "corpus", "bench", "vendor", "target", ".ven
 
 # Tokens short or generic enough to produce false positives regardless of profile.
 IGNORE_TOKENS = {
-    "angle", "angles", "team", "group", "type", "name", "color", "health", "axis",
-    "light", "origin", "target", "targetname", "model", "speed", "wait", "count",
-    "message", "music", "style", "shards", "only", "notfree", "notteam", "spawnflags",
-    "worldspawn", "classname", "func_door", "func_static",
+    "angle",
+    "angles",
+    "team",
+    "group",
+    "type",
+    "name",
+    "color",
+    "health",
+    "axis",
+    "light",
+    "origin",
+    "target",
+    "targetname",
+    "model",
+    "speed",
+    "wait",
+    "count",
+    "message",
+    "music",
+    "style",
+    "shards",
+    "only",
+    "notfree",
+    "notteam",
+    "spawnflags",
+    "worldspawn",
+    "classname",
+    "func_door",
+    "func_static",
 }
 
 # Identifiers that are game-specific by nature and must never appear in code, independent
@@ -84,10 +109,7 @@ def load_profile_vocabulary(root: Path) -> set[str]:
         for key in ("basegame", "game"):
             for m in re.finditer(rf"^\s*{key}:\s*['\"]?([A-Za-z0-9_]+)", text, re.M):
                 vocab.add(m.group(1))
-    return {
-        v for v in vocab
-        if len(v) >= MIN_LENGTH and v.lower() not in IGNORE_TOKENS
-    }
+    return {v for v in vocab if len(v) >= MIN_LENGTH and v.lower() not in IGNORE_TOKENS}
 
 
 def should_scan(p: Path, root: Path) -> bool:
@@ -123,7 +145,7 @@ def code_lines(path: Path) -> list[tuple[int, str]]:
             continue
         if path.suffix in {".py", ".pyi"}:
             for d in DOCSTRING_DELIMS:
-                if line.startswith(d) or line.startswith(("r" + d, 'f' + d, 'b' + d)):
+                if line.startswith(d) or line.startswith(("r" + d, "f" + d, "b" + d)):
                     body = line.split(d, 1)[1]
                     if d not in body:
                         in_doc = d
@@ -169,18 +191,24 @@ def scan(root: Path, vocab: set[str], verbose: bool) -> list[tuple[Path, int, st
                         hits.append((p.relative_to(root), lineno, tok, line.strip()[:120]))
     if verbose:
         print(f"  scanned {files} file(s) in {', '.join(CODE_DIRS)}")
-        print(f"  {len(vocab)} profile-derived token(s) + "
-              f"{len(ALWAYS_FORBIDDEN)} always-forbidden pattern(s)")
+        print(
+            f"  {len(vocab)} profile-derived token(s) + "
+            f"{len(ALWAYS_FORBIDDEN)} always-forbidden pattern(s)"
+        )
         print("  comments and docstrings excluded: the rule guards behaviour, not prose")
     return hits
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("--list-vocabulary", action="store_true",
-                    help="print the derived forbidden vocabulary and exit")
+    ap.add_argument(
+        "--list-vocabulary",
+        action="store_true",
+        help="print the derived forbidden vocabulary and exit",
+    )
     args = ap.parse_args()
 
     root = repo_root()
@@ -192,21 +220,27 @@ def main() -> int:
         return 0
 
     if not vocab:
-        print("seam lint: no profile vocabulary found under profiles/ — nothing to enforce "
-              "yet. This is expected only before the first profile is written.")
+        print(
+            "seam lint: no profile vocabulary found under profiles/ — nothing to enforce "
+            "yet. This is expected only before the first profile is written."
+        )
 
     hits = scan(root, vocab, args.verbose)
     if not hits:
         print("seam lint: clean — no game-specific strings in code")
         return 0
 
-    print(f"seam lint: {len(hits)} leak(s) — game-specific vocabulary belongs in "
-          f"profiles/ or corpus/, not in code (§7.4)\n")
+    print(
+        f"seam lint: {len(hits)} leak(s) — game-specific vocabulary belongs in "
+        f"profiles/ or corpus/, not in code (§7.4)\n"
+    )
     for path, lineno, tok, line in hits:
         print(f"  {path}:{lineno}: {tok!r}")
         print(f"    {line}")
-    print("\nFix by moving the value into profiles/ and reading it as data. If a line is a "
-          "false positive, append `# seam-lint: allow` with a reason.")
+    print(
+        "\nFix by moving the value into profiles/ and reading it as data. If a line is a "
+        "false positive, append `# seam-lint: allow` with a reason."
+    )
     return 1
 
 

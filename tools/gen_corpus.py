@@ -33,8 +33,16 @@ from pathlib import Path
 TEX = "0 0 0 0.500000 0.500000 0 0 0"
 
 
-def box_faces(x0: int, y0: int, z0: int, x1: int, y1: int, z1: int,
-              shader: str = "common/caulk", tail: str = TEX) -> list[str]:
+def box_faces(
+    x0: int,
+    y0: int,
+    z0: int,
+    x1: int,
+    y1: int,
+    z1: int,
+    shader: str = "common/caulk",
+    tail: str = TEX,
+) -> list[str]:
     """Six axial face lines for a box, with outward normals.
 
     Point order follows q3's convention `n = cross(c - a, b - a)` with the solid at
@@ -42,12 +50,12 @@ def box_faces(x0: int, y0: int, z0: int, x1: int, y1: int, z1: int,
     encloses nothing, so these are written once and reused.
     """
     return [
-        f"( {x0} {y0} {z1} ) ( {x0} {y0+1} {z1} ) ( {x0+1} {y0} {z1} ) {shader} {tail}",
-        f"( {x0} {y0} {z0} ) ( {x0+1} {y0} {z0} ) ( {x0} {y0+1} {z0} ) {shader} {tail}",
-        f"( {x0} {y0} {z0} ) ( {x0} {y0} {z0+1} ) ( {x0+1} {y0} {z0} ) {shader} {tail}",
-        f"( {x0} {y1} {z0} ) ( {x0+1} {y1} {z0} ) ( {x0} {y1} {z0+1} ) {shader} {tail}",
-        f"( {x0} {y0} {z0} ) ( {x0} {y0+1} {z0} ) ( {x0} {y0} {z0+1} ) {shader} {tail}",
-        f"( {x1} {y0} {z0} ) ( {x1} {y0} {z0+1} ) ( {x1} {y0+1} {z0} ) {shader} {tail}",
+        f"( {x0} {y0} {z1} ) ( {x0} {y0 + 1} {z1} ) ( {x0 + 1} {y0} {z1} ) {shader} {tail}",
+        f"( {x0} {y0} {z0} ) ( {x0 + 1} {y0} {z0} ) ( {x0} {y0 + 1} {z0} ) {shader} {tail}",
+        f"( {x0} {y0} {z0} ) ( {x0} {y0} {z0 + 1} ) ( {x0 + 1} {y0} {z0} ) {shader} {tail}",
+        f"( {x0} {y1} {z0} ) ( {x0 + 1} {y1} {z0} ) ( {x0} {y1} {z0 + 1} ) {shader} {tail}",
+        f"( {x0} {y0} {z0} ) ( {x0} {y0 + 1} {z0} ) ( {x0} {y0} {z0 + 1} ) {shader} {tail}",
+        f"( {x1} {y0} {z0} ) ( {x1} {y0} {z0 + 1} ) ( {x1} {y0 + 1} {z0} ) {shader} {tail}",
     ]
 
 
@@ -68,12 +76,12 @@ def hollow_room(size: int = 512, height: int = 256, wall: int = 16) -> str:
     """A sealed six-brush room — the minimum a compiler will accept without leaking."""
     s, h, w = size, height, wall
     parts = [
-        brush(box_faces(-w, -w, -w, s + w, s + w, 0)),           # floor
-        brush(box_faces(-w, -w, h, s + w, s + w, h + w)),        # ceiling
-        brush(box_faces(-w, -w, 0, 0, s + w, h)),                # -X wall
-        brush(box_faces(s, -w, 0, s + w, s + w, h)),             # +X wall
-        brush(box_faces(0, -w, 0, s, 0, h)),                     # -Y wall
-        brush(box_faces(0, s, 0, s, s + w, h)),                  # +Y wall
+        brush(box_faces(-w, -w, -w, s + w, s + w, 0)),  # floor
+        brush(box_faces(-w, -w, h, s + w, s + w, h + w)),  # ceiling
+        brush(box_faces(-w, -w, 0, 0, s + w, h)),  # -X wall
+        brush(box_faces(s, -w, 0, s + w, s + w, h)),  # +X wall
+        brush(box_faces(0, -w, 0, s, 0, h)),  # -Y wall
+        brush(box_faces(0, s, 0, s, s + w, h)),  # +Y wall
     ]
     return "".join(parts)
 
@@ -116,9 +124,7 @@ def valid_maps() -> dict[str, str]:
         "( ( 128 0 0 1 0 ) ( 128 64 64 1 -0.5 ) ( 128 128 0 1 -1 ) )\n"
         ")\n}\n}\n"
     )
-    out["patch_def2.map"] = entity(
-        [("classname", "worldspawn")], hollow_room() + patch2
-    )
+    out["patch_def2.map"] = entity([("classname", "worldspawn")], hollow_room() + patch2)
 
     mixed = brush(box_faces(0, 0, 0, 64, 64, 64)) + brush(bp_faces, keyword="brushDef")
     out["mixed_texdefs.map"] = entity([("classname", "worldspawn")], mixed)
@@ -147,9 +153,8 @@ def valid_maps() -> dict[str, str]:
         + "// a note from the mapper\n"
     )
 
-    out["block_comments.map"] = (
-        "/* a block comment\n   spanning lines */\n"
-        + entity([("classname", "worldspawn")], hollow_room())
+    out["block_comments.map"] = "/* a block comment\n   spanning lines */\n" + entity(
+        [("classname", "worldspawn")], hollow_room()
     )
     return out
 
@@ -159,41 +164,57 @@ def degenerate_maps() -> dict[str, str]:
     out: dict[str, str] = {}
     w = lambda prims: entity([("classname", "worldspawn")], prims)  # noqa: E731
 
-    out["too_few_faces.map"] = w(
-        brush(box_faces(0, 0, 0, 64, 64, 64)[:3])
+    out["too_few_faces.map"] = w(brush(box_faces(0, 0, 0, 64, 64, 64)[:3]))
+    out["mirrored_plane.map"] = w(
+        brush(
+            [
+                f"( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) common/caulk {TEX}",
+                f"( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) common/caulk {TEX}",
+                f"( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) common/caulk {TEX}",
+                f"( 0 8 0 ) ( 1 8 0 ) ( 0 8 1 ) common/caulk {TEX}",
+            ]
+        )
     )
-    out["mirrored_plane.map"] = w(brush([
-        f"( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) common/caulk {TEX}",
-        f"( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) common/caulk {TEX}",
-        f"( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) common/caulk {TEX}",
-        f"( 0 8 0 ) ( 1 8 0 ) ( 0 8 1 ) common/caulk {TEX}",
-    ]))
     # The same plane written from two different point triples.
-    out["duplicate_plane.map"] = w(brush(
-        box_faces(0, 0, 0, 64, 64, 64)
-        + [f"( 512 -256 64 ) ( 512 -255 64 ) ( 513 -256 64 ) common/caulk {TEX}"]
-    ))
-    # A seventh plane touching only the (64,64,64) corner: bounds no area.
-    out["redundant_plane.map"] = w(brush(
-        box_faces(0, 0, 0, 64, 64, 64)
-        + [f"( 64 64 64 ) ( 64 128 0 ) ( 128 64 0 ) common/caulk {TEX}"]
-    ))
-    out["off_grid.map"] = w(brush([
-        f"( 0 0 0.5 ) ( 0 1 0.5 ) ( 1 0 0.5 ) common/caulk {TEX}",
-        *box_faces(0, 0, 0, 64, 64, 64)[1:],
-    ]))
-    out["out_of_bounds.map"] = w(brush([
-        f"( 0 0 999999 ) ( 0 1 999999 ) ( 1 0 999999 ) common/caulk {TEX}",
-        *box_faces(0, 0, 0, 64, 64, 64)[1:],
-    ]))
-    out["collinear_face.map"] = w(brush([
-        f"( 0 0 0 ) ( 8 0 0 ) ( 16 0 0 ) common/caulk {TEX}",
-        *box_faces(0, 0, 0, 64, 64, 64)[1:],
-    ]))
-    out["thin_brush.map"] = w(brush(box_faces(0, 0, 0, 256, 256, 1)))
-    out["no_worldspawn.map"] = entity(
-        [("classname", "point_entity_a"), ("origin", "0 0 24")]
+    out["duplicate_plane.map"] = w(
+        brush(
+            box_faces(0, 0, 0, 64, 64, 64)
+            + [f"( 512 -256 64 ) ( 512 -255 64 ) ( 513 -256 64 ) common/caulk {TEX}"]
+        )
     )
+    # A seventh plane touching only the (64,64,64) corner: bounds no area.
+    out["redundant_plane.map"] = w(
+        brush(
+            box_faces(0, 0, 0, 64, 64, 64)
+            + [f"( 64 64 64 ) ( 64 128 0 ) ( 128 64 0 ) common/caulk {TEX}"]
+        )
+    )
+    out["off_grid.map"] = w(
+        brush(
+            [
+                f"( 0 0 0.5 ) ( 0 1 0.5 ) ( 1 0 0.5 ) common/caulk {TEX}",
+                *box_faces(0, 0, 0, 64, 64, 64)[1:],
+            ]
+        )
+    )
+    out["out_of_bounds.map"] = w(
+        brush(
+            [
+                f"( 0 0 999999 ) ( 0 1 999999 ) ( 1 0 999999 ) common/caulk {TEX}",
+                *box_faces(0, 0, 0, 64, 64, 64)[1:],
+            ]
+        )
+    )
+    out["collinear_face.map"] = w(
+        brush(
+            [
+                f"( 0 0 0 ) ( 8 0 0 ) ( 16 0 0 ) common/caulk {TEX}",
+                *box_faces(0, 0, 0, 64, 64, 64)[1:],
+            ]
+        )
+    )
+    out["thin_brush.map"] = w(brush(box_faces(0, 0, 0, 256, 256, 1)))
+    out["no_worldspawn.map"] = entity([("classname", "point_entity_a"), ("origin", "0 0 24")])
     out["patch_dims_mismatch.map"] = w(
         "{\npatchDef2\n{\ncommon/caulk\n( 3 3 0 0 0 )\n(\n"
         "( ( 0 0 0 0 0 ) ( 0 0 0 0 0 ) )\n)\n}\n}\n"
@@ -213,8 +234,9 @@ def degenerate_maps() -> dict[str, str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--out", type=Path, required=True, help="output directory")
     args = ap.parse_args()
 

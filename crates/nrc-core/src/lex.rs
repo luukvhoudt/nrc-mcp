@@ -23,7 +23,10 @@ pub enum Tok {
     /// reproduced verbatim (see [`crate::num::Num`]).
     Ident(String),
     /// A comment, including its `//` or `/* */` delimiters.
-    Comment { text: String, own_line: bool },
+    Comment {
+        text: String,
+        own_line: bool,
+    },
     Eof,
 }
 
@@ -196,7 +199,12 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
             _ => None,
         };
         if let Some(t) = punct {
-            out.push(Token { tok: t, line, start: i, end: i + 1 });
+            out.push(Token {
+                tok: t,
+                line,
+                start: i,
+                end: i + 1,
+            });
             i += 1;
             line_has_token = true;
             continue;
@@ -216,12 +224,25 @@ pub fn tokenize(src: &str) -> Result<Vec<Token>, LexError> {
             }
             i += 1;
         }
-        debug_assert!(i > s, "bare-word scan must always consume at least one byte");
-        out.push(Token { tok: Tok::Ident(src[s..i].to_string()), line, start: s, end: i });
+        debug_assert!(
+            i > s,
+            "bare-word scan must always consume at least one byte"
+        );
+        out.push(Token {
+            tok: Tok::Ident(src[s..i].to_string()),
+            line,
+            start: s,
+            end: i,
+        });
         line_has_token = true;
     }
 
-    out.push(Token { tok: Tok::Eof, line, start: src.len(), end: src.len() });
+    out.push(Token {
+        tok: Tok::Eof,
+        line,
+        start: src.len(),
+        end: src.len(),
+    });
     Ok(out)
 }
 
@@ -245,7 +266,10 @@ mod tests {
 
     #[test]
     fn shader_paths_keep_single_slashes() {
-        assert_eq!(toks("textures/urt/wall_01")[0], Tok::Ident("textures/urt/wall_01".into()));
+        assert_eq!(
+            toks("textures/urt/wall_01")[0],
+            Tok::Ident("textures/urt/wall_01".into())
+        );
     }
 
     #[test]
@@ -276,7 +300,10 @@ mod tests {
     fn block_comments_span_lines_and_count_them() {
         let toks = tokenize("/* a\nb */\n{").unwrap();
         assert!(matches!(&toks[0].tok, Tok::Comment { text, .. } if text == "/* a\nb */"));
-        assert_eq!(toks[1].line, 3, "line counting must survive a block comment");
+        assert_eq!(
+            toks[1].line, 3,
+            "line counting must survive a block comment"
+        );
     }
 
     #[test]

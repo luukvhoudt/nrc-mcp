@@ -51,14 +51,32 @@ PRESETS: dict[str, list[list[str]]] = {
     "quality": [
         ["-bsp", "-meta"],
         ["-vis"],
-        ["-light", "-fast", "-filter", "-samples", "2", "-bounce", "4",
-         "-patchshadows", "-nobouncestore"],
+        [
+            "-light",
+            "-fast",
+            "-filter",
+            "-samples",
+            "2",
+            "-bounce",
+            "4",
+            "-patchshadows",
+            "-nobouncestore",
+        ],
     ],
     "final": [
         ["-bsp", "-meta"],
         ["-vis", "-saveprt"],
-        ["-light", "-filter", "-samples", "3", "-bounce", "8",
-         "-patchshadows", "-dirty", "-nobouncestore"],
+        [
+            "-light",
+            "-filter",
+            "-samples",
+            "3",
+            "-bounce",
+            "8",
+            "-patchshadows",
+            "-dirty",
+            "-nobouncestore",
+        ],
     ],
 }
 
@@ -86,16 +104,18 @@ def is_wsl() -> bool:
         return True
     if os.environ.get("NRC_Q3MAP2_MODE") == "native":
         return False
-    return "microsoft" in Path("/proc/version").read_text().lower() if Path("/proc/version").exists() else False
+    return (
+        "microsoft" in Path("/proc/version").read_text().lower()
+        if Path("/proc/version").exists()
+        else False
+    )
 
 
 def to_windows_path(p: Path) -> str:
     """Translate a path for the Windows binary, or return it unchanged when native."""
     if not is_wsl():
         return str(p)
-    out = subprocess.run(
-        ["wslpath", "-w", str(p)], capture_output=True, text=True, check=False
-    )
+    out = subprocess.run(["wslpath", "-w", str(p)], capture_output=True, text=True, check=False)
     if out.returncode != 0:
         raise Q3Map2Error(f"wslpath failed for {p}: {out.stderr.strip()}")
     return out.stdout.strip()
@@ -192,8 +212,9 @@ def classify(line: str) -> str | None:
     return None
 
 
-def run_stage(exe: Path, general: list[str], flags: list[str], win_map: str,
-              verbose: bool) -> StageResult:
+def run_stage(
+    exe: Path, general: list[str], flags: list[str], win_map: str, verbose: bool
+) -> StageResult:
     # `-json`/`-pk3` are consumed with takeFront and must lead; the map file is taken with
     # takeBack and must trail. Everything else sits between.
     lead: list[str] = []
@@ -222,8 +243,9 @@ def run_stage(exe: Path, general: list[str], flags: list[str], win_map: str,
     return res
 
 
-def compile_map(map_path: Path, stages: list[list[str]], *, stage_dir: Path | None,
-                verbose: bool, keep: bool) -> dict:
+def compile_map(
+    map_path: Path, stages: list[list[str]], *, stage_dir: Path | None, verbose: bool, keep: bool
+) -> dict:
     exe = find_q3map2()
     map_path = map_path.resolve()
     if not map_path.is_file():
@@ -312,19 +334,28 @@ def compile_map(map_path: Path, stages: list[list[str]], *, stage_dir: Path | No
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--preset", choices=sorted(PRESETS), help="named compile preset (§6.1)")
-    g.add_argument("--json-unpack", action="store_true",
-                   help="dump a .bsp to JSON (note: q3map2 never parses -unpack; unpack "
-                        "is the default for -json, so we do not pass it)")
-    g.add_argument("--flags", nargs=argparse.REMAINDER,
-                   help="raw q3map2 flags for one stage, for experiments")
-    ap.add_argument("--stage-dir", type=Path, default=None,
-                    help="override the Windows staging directory")
-    ap.add_argument("--keep-staging", action="store_true",
-                    help="leave the staging directory in place for inspection")
+    g.add_argument(
+        "--json-unpack",
+        action="store_true",
+        help="dump a .bsp to JSON (note: q3map2 never parses -unpack; unpack "
+        "is the default for -json, so we do not pass it)",
+    )
+    g.add_argument(
+        "--flags", nargs=argparse.REMAINDER, help="raw q3map2 flags for one stage, for experiments"
+    )
+    ap.add_argument(
+        "--stage-dir", type=Path, default=None, help="override the Windows staging directory"
+    )
+    ap.add_argument(
+        "--keep-staging",
+        action="store_true",
+        help="leave the staging directory in place for inspection",
+    )
     ap.add_argument("-v", "--verbose", action="store_true", help="stream q3map2 output")
     ap.add_argument("target", type=Path, help="the .map (or .bsp for --json-unpack)")
     args = ap.parse_args()
@@ -339,8 +370,13 @@ def main() -> int:
             ap.error("--flags needs at least one flag")
 
     try:
-        result = compile_map(args.target, stages, stage_dir=args.stage_dir,
-                             verbose=args.verbose, keep=args.keep_staging)
+        result = compile_map(
+            args.target,
+            stages,
+            stage_dir=args.stage_dir,
+            verbose=args.verbose,
+            keep=args.keep_staging,
+        )
     except Q3Map2Error as e:
         print(f"q3map2: {e}", file=sys.stderr)
         return 2

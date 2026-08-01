@@ -167,9 +167,15 @@ impl IPlane {
         let ba = b.sub(a);
         let ca = c.sub(a);
         // cross(ca, ba)
-        let nx = ca[1].checked_mul(ba[2])?.checked_sub(ca[2].checked_mul(ba[1])?)?;
-        let ny = ca[2].checked_mul(ba[0])?.checked_sub(ca[0].checked_mul(ba[2])?)?;
-        let nz = ca[0].checked_mul(ba[1])?.checked_sub(ca[1].checked_mul(ba[0])?)?;
+        let nx = ca[1]
+            .checked_mul(ba[2])?
+            .checked_sub(ca[2].checked_mul(ba[1])?)?;
+        let ny = ca[2]
+            .checked_mul(ba[0])?
+            .checked_sub(ca[0].checked_mul(ba[2])?)?;
+        let nz = ca[0]
+            .checked_mul(ba[1])?
+            .checked_sub(ca[1].checked_mul(ba[0])?)?;
         if nx == 0 && ny == 0 && nz == 0 {
             return None; // collinear: no plane exists
         }
@@ -236,7 +242,12 @@ impl IPlane {
     }
 
     pub fn flipped(&self) -> IPlane {
-        IPlane { nx: -self.nx, ny: -self.ny, nz: -self.nz, d: -self.d }
+        IPlane {
+            nx: -self.nx,
+            ny: -self.ny,
+            nz: -self.nz,
+            d: -self.d,
+        }
     }
 
     /// True if this is the same plane facing the same way — exact, no epsilon.
@@ -253,7 +264,10 @@ impl IPlane {
     pub fn to_plane(self) -> crate::math::Plane {
         let n = vec3(self.nx as f64, self.ny as f64, self.nz as f64);
         let len = n.length();
-        crate::math::Plane { normal: n / len, dist: self.d as f64 / len }
+        crate::math::Plane {
+            normal: n / len,
+            dist: self.d as f64 / len,
+        }
     }
 }
 
@@ -329,9 +343,9 @@ pub fn intersect3_exact(a: &IPlane, b: &IPlane, c: &IPlane) -> Option<RatVec3> {
     };
 
     let mut num = [0i128; 3];
-    for i in 0..3 {
+    for (i, slot) in num.iter_mut().enumerate() {
         let (ra, rb, rc) = rows_with_d_in(i);
-        num[i] = det3(ra, rb, rc)?;
+        *slot = det3(ra, rb, rc)?;
     }
 
     // Normalize the sign so `den` is positive, keeping the `%` checks in `RatVec3`
@@ -378,7 +392,7 @@ mod tests {
         let b = ivec3(64, 0, 0);
         let c = ivec3(0, 64, 0);
         assert_eq!(orient3d(a, b, c, ivec3(32, 32, 0)), Sign::Zero);
-        assert_eq!(orient3d(a, b, c, ivec3(32, 32, 1)).is_zero(), false);
+        assert!(!orient3d(a, b, c, ivec3(32, 32, 1)).is_zero());
         assert_eq!(
             orient3d(a, b, c, ivec3(32, 32, 1)).negated(),
             orient3d(a, b, c, ivec3(32, 32, -1))
@@ -459,9 +473,24 @@ mod tests {
 
     #[test]
     fn three_planes_intersect_exactly_on_grid() {
-        let px = IPlane { nx: 1, ny: 0, nz: 0, d: 16 };
-        let py = IPlane { nx: 0, ny: 1, nz: 0, d: 32 };
-        let pz = IPlane { nx: 0, ny: 0, nz: 1, d: 48 };
+        let px = IPlane {
+            nx: 1,
+            ny: 0,
+            nz: 0,
+            d: 16,
+        };
+        let py = IPlane {
+            nx: 0,
+            ny: 1,
+            nz: 0,
+            d: 32,
+        };
+        let pz = IPlane {
+            nx: 0,
+            ny: 0,
+            nz: 1,
+            d: 48,
+        };
         let p = intersect3_exact(&px, &py, &pz).unwrap();
         assert!(p.is_integral());
         assert_eq!(p.to_ivec3().unwrap(), ivec3(16, 32, 48));
@@ -472,9 +501,24 @@ mod tests {
     fn off_grid_intersection_is_detected_not_rounded() {
         // A 45-degree plane through an odd offset puts the corner on a half unit.
         // Rounding first would hide exactly the defect we need to report.
-        let px = IPlane { nx: 1, ny: 0, nz: 0, d: 0 };
-        let pz = IPlane { nx: 0, ny: 0, nz: 1, d: 0 };
-        let diag = IPlane { nx: 2, ny: 2, nz: 0, d: 1 };
+        let px = IPlane {
+            nx: 1,
+            ny: 0,
+            nz: 0,
+            d: 0,
+        };
+        let pz = IPlane {
+            nx: 0,
+            ny: 0,
+            nz: 1,
+            d: 0,
+        };
+        let diag = IPlane {
+            nx: 2,
+            ny: 2,
+            nz: 0,
+            d: 1,
+        };
         let p = intersect3_exact(&px, &pz, &diag).unwrap();
         assert!(!p.is_integral());
         assert_eq!(p.to_vec3(), vec3(0.0, 0.5, 0.0));
@@ -483,7 +527,12 @@ mod tests {
 
     #[test]
     fn grid_membership_respects_spacing() {
-        let p = RatVec3 { x: 16, y: 32, z: 48, den: 1 };
+        let p = RatVec3 {
+            x: 16,
+            y: 32,
+            z: 48,
+            den: 1,
+        };
         assert!(p.is_on_grid(16));
         assert!(p.is_on_grid(8));
         assert!(!p.is_on_grid(64), "48 is not a multiple of 64");
@@ -491,9 +540,24 @@ mod tests {
 
     #[test]
     fn parallel_planes_have_no_intersection_point() {
-        let a = IPlane { nx: 0, ny: 0, nz: 1, d: 0 };
-        let b = IPlane { nx: 0, ny: 0, nz: 1, d: 64 };
-        let c = IPlane { nx: 1, ny: 0, nz: 0, d: 0 };
+        let a = IPlane {
+            nx: 0,
+            ny: 0,
+            nz: 1,
+            d: 0,
+        };
+        let b = IPlane {
+            nx: 0,
+            ny: 0,
+            nz: 1,
+            d: 64,
+        };
+        let c = IPlane {
+            nx: 1,
+            ny: 0,
+            nz: 0,
+            d: 0,
+        };
         assert!(intersect3_exact(&a, &b, &c).is_none());
         // Coincident planes likewise.
         assert!(intersect3_exact(&a, &a, &c).is_none());
@@ -501,11 +565,39 @@ mod tests {
 
     #[test]
     fn reduction_produces_a_canonical_form() {
-        let a = IPlane { nx: 4, ny: 0, nz: 0, d: 64 }.reduced();
-        assert_eq!(a, IPlane { nx: 1, ny: 0, nz: 0, d: 16 });
+        let a = IPlane {
+            nx: 4,
+            ny: 0,
+            nz: 0,
+            d: 64,
+        }
+        .reduced();
+        assert_eq!(
+            a,
+            IPlane {
+                nx: 1,
+                ny: 0,
+                nz: 0,
+                d: 16
+            }
+        );
         // A normal that shares no factor with d must not be scaled.
-        let b = IPlane { nx: 2, ny: 0, nz: 0, d: 3 }.reduced();
-        assert_eq!(b, IPlane { nx: 2, ny: 0, nz: 0, d: 3 });
+        let b = IPlane {
+            nx: 2,
+            ny: 0,
+            nz: 0,
+            d: 3,
+        }
+        .reduced();
+        assert_eq!(
+            b,
+            IPlane {
+                nx: 2,
+                ny: 0,
+                nz: 0,
+                d: 3
+            }
+        );
     }
 
     #[test]
@@ -514,8 +606,7 @@ mod tests {
         let b = ivec3(64, 0, 0);
         let c = ivec3(0, 64, 0);
         let ip = IPlane::from_points(a, b, c).unwrap();
-        let fp =
-            crate::math::Plane::from_points(a.to_vec3(), b.to_vec3(), c.to_vec3()).unwrap();
+        let fp = crate::math::Plane::from_points(a.to_vec3(), b.to_vec3(), c.to_vec3()).unwrap();
         let ipf = ip.to_plane();
         assert!(
             ipf.approx_eq(&fp),

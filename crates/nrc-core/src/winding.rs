@@ -57,7 +57,10 @@ impl std::fmt::Display for Degeneracy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Degeneracy::TooFewFaces(n) => {
-                write!(f, "only {n} face(s); at least 4 are needed to bound a volume")
+                write!(
+                    f,
+                    "only {n} face(s); at least 4 are needed to bound a volume"
+                )
             }
             Degeneracy::FaceHasNoPlane(i) => {
                 write!(f, "face {i} has collinear or coincident plane points")
@@ -71,7 +74,10 @@ impl std::fmt::Display for Degeneracy {
                 write!(f, "the face planes enclose no volume")
             }
             Degeneracy::TooComplex(n) => {
-                write!(f, "{n} faces exceeds the exact-evaluation limit of {MAX_EXACT_FACES}")
+                write!(
+                    f,
+                    "{n} faces exceeds the exact-evaluation limit of {MAX_EXACT_FACES}"
+                )
             }
         }
     }
@@ -265,10 +271,16 @@ pub fn geometry_from_planes(planes: &[IPlane]) -> Result<BrushGeometry, Degenera
             .filter(|&v| incident[v].contains(&m))
             .collect();
         order_face_vertices(&vertices, &mut idx, plane);
-        out_faces.push(Some(FaceGeometry { plane: *plane, vertices: idx }));
+        out_faces.push(Some(FaceGeometry {
+            plane: *plane,
+            vertices: idx,
+        }));
     }
 
-    Ok(BrushGeometry { vertices, faces: out_faces })
+    Ok(BrushGeometry {
+        vertices,
+        faces: out_faces,
+    })
 }
 
 /// Sort a face's vertices into counter-clockwise order as seen from outside.
@@ -307,12 +319,15 @@ fn order_face_vertices(vertices: &[RatVec3], idx: &mut Vec<usize>, plane: &IPlan
     *idx = keyed.into_iter().map(|(_, i)| i).collect();
 }
 
+/// Indices of two faces that share a plane.
+pub type FacePair = (usize, usize);
+
 /// Pairs of faces sharing the same plane, and pairs whose planes are exact mirrors.
 ///
 /// Duplicates are what q3map2's `RemoveDuplicateBrushPlanes` strips; a mirrored pair makes
 /// it reject the brush outright. Both are exact integer comparisons here, not epsilon
 /// tests, so the answer does not depend on how the brush was dragged into place.
-pub fn duplicate_plane_pairs(brush: &Brush) -> (Vec<(usize, usize)>, Vec<(usize, usize)>) {
+pub fn duplicate_plane_pairs(brush: &Brush) -> (Vec<FacePair>, Vec<FacePair>) {
     let planes: Vec<Option<IPlane>> = brush.faces.iter().map(|f| f.iplane()).collect();
     let mut same = Vec::new();
     let mut mirrored = Vec::new();
@@ -359,12 +374,42 @@ mod tests {
     /// Six planes of an axis-aligned box from (0,0,0) to (sx,sy,sz).
     fn box_planes(sx: i64, sy: i64, sz: i64) -> Vec<IPlane> {
         vec![
-            IPlane { nx: -1, ny: 0, nz: 0, d: 0 },
-            IPlane { nx: 1, ny: 0, nz: 0, d: sx as i128 },
-            IPlane { nx: 0, ny: -1, nz: 0, d: 0 },
-            IPlane { nx: 0, ny: 1, nz: 0, d: sy as i128 },
-            IPlane { nx: 0, ny: 0, nz: -1, d: 0 },
-            IPlane { nx: 0, ny: 0, nz: 1, d: sz as i128 },
+            IPlane {
+                nx: -1,
+                ny: 0,
+                nz: 0,
+                d: 0,
+            },
+            IPlane {
+                nx: 1,
+                ny: 0,
+                nz: 0,
+                d: sx as i128,
+            },
+            IPlane {
+                nx: 0,
+                ny: -1,
+                nz: 0,
+                d: 0,
+            },
+            IPlane {
+                nx: 0,
+                ny: 1,
+                nz: 0,
+                d: sy as i128,
+            },
+            IPlane {
+                nx: 0,
+                ny: 0,
+                nz: -1,
+                d: 0,
+            },
+            IPlane {
+                nx: 0,
+                ny: 0,
+                nz: 1,
+                d: sz as i128,
+            },
         ]
     }
 
@@ -386,12 +431,7 @@ mod tests {
     #[test]
     fn box_face_areas_are_exact() {
         let g = geometry_from_planes(&box_planes(64, 128, 32)).unwrap();
-        let areas: Vec<f64> = g
-            .faces
-            .iter()
-            .flatten()
-            .map(|f| face_area(&g, f))
-            .collect();
+        let areas: Vec<f64> = g.faces.iter().flatten().map(|f| face_area(&g, f)).collect();
         // Two of each: 128*32, 64*32, 64*128.
         let mut sorted = areas.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -410,7 +450,12 @@ mod tests {
         // brush is identical without it. Floating-point clipping typically leaves a
         // sub-pixel sliver here instead of nothing.
         let mut planes = box_planes(64, 64, 64);
-        planes.push(IPlane { nx: 1, ny: 1, nz: 1, d: 192 }); // through (64,64,64)
+        planes.push(IPlane {
+            nx: 1,
+            ny: 1,
+            nz: 1,
+            d: 192,
+        }); // through (64,64,64)
         let g = geometry_from_planes(&planes).unwrap();
         assert_eq!(g.vertices.len(), 8, "the corner plane adds no vertices");
         assert_eq!(g.redundant_faces(), vec![6]);
@@ -420,7 +465,12 @@ mod tests {
     #[test]
     fn a_plane_cutting_a_corner_off_creates_a_real_face() {
         let mut planes = box_planes(64, 64, 64);
-        planes.push(IPlane { nx: 1, ny: 1, nz: 1, d: 160 });
+        planes.push(IPlane {
+            nx: 1,
+            ny: 1,
+            nz: 1,
+            d: 160,
+        });
         let g = geometry_from_planes(&planes).unwrap();
         assert!(g.redundant_faces().is_empty());
         assert_eq!(
@@ -434,12 +484,42 @@ mod tests {
     #[test]
     fn contradictory_planes_enclose_no_volume() {
         let planes = vec![
-            IPlane { nx: 0, ny: 0, nz: 1, d: 0 },
-            IPlane { nx: 0, ny: 0, nz: -1, d: -64 }, // z >= 64 and z <= 0
-            IPlane { nx: 1, ny: 0, nz: 0, d: 64 },
-            IPlane { nx: -1, ny: 0, nz: 0, d: 0 },
-            IPlane { nx: 0, ny: 1, nz: 0, d: 64 },
-            IPlane { nx: 0, ny: -1, nz: 0, d: 0 },
+            IPlane {
+                nx: 0,
+                ny: 0,
+                nz: 1,
+                d: 0,
+            },
+            IPlane {
+                nx: 0,
+                ny: 0,
+                nz: -1,
+                d: -64,
+            }, // z >= 64 and z <= 0
+            IPlane {
+                nx: 1,
+                ny: 0,
+                nz: 0,
+                d: 64,
+            },
+            IPlane {
+                nx: -1,
+                ny: 0,
+                nz: 0,
+                d: 0,
+            },
+            IPlane {
+                nx: 0,
+                ny: 1,
+                nz: 0,
+                d: 64,
+            },
+            IPlane {
+                nx: 0,
+                ny: -1,
+                nz: 0,
+                d: 0,
+            },
         ];
         assert_eq!(
             geometry_from_planes(&planes),
@@ -452,12 +532,42 @@ mod tests {
         // Top and bottom coincident: zero volume. This is what a brush dragged to nothing
         // looks like, and it must not produce geometry.
         let planes = vec![
-            IPlane { nx: 0, ny: 0, nz: 1, d: 0 },
-            IPlane { nx: 0, ny: 0, nz: -1, d: 0 },
-            IPlane { nx: 1, ny: 0, nz: 0, d: 64 },
-            IPlane { nx: -1, ny: 0, nz: 0, d: 0 },
-            IPlane { nx: 0, ny: 1, nz: 0, d: 64 },
-            IPlane { nx: 0, ny: -1, nz: 0, d: 0 },
+            IPlane {
+                nx: 0,
+                ny: 0,
+                nz: 1,
+                d: 0,
+            },
+            IPlane {
+                nx: 0,
+                ny: 0,
+                nz: -1,
+                d: 0,
+            },
+            IPlane {
+                nx: 1,
+                ny: 0,
+                nz: 0,
+                d: 64,
+            },
+            IPlane {
+                nx: -1,
+                ny: 0,
+                nz: 0,
+                d: 0,
+            },
+            IPlane {
+                nx: 0,
+                ny: 1,
+                nz: 0,
+                d: 64,
+            },
+            IPlane {
+                nx: 0,
+                ny: -1,
+                nz: 0,
+                d: 0,
+            },
         ];
         // Four coplanar corners are found, but they bound no volume.
         let r = geometry_from_planes(&planes);
@@ -476,10 +586,18 @@ mod tests {
     fn off_grid_vertices_are_reported_exactly() {
         // Slice a box with a 45-degree plane placed so the cut lands on a half unit.
         let mut planes = box_planes(64, 64, 64);
-        planes.push(IPlane { nx: 2, ny: 2, nz: 0, d: 127 });
+        planes.push(IPlane {
+            nx: 2,
+            ny: 2,
+            nz: 0,
+            d: 127,
+        });
         let g = geometry_from_planes(&planes).unwrap();
         let off = g.off_grid_vertices(1);
-        assert!(!off.is_empty(), "a half-unit cut must be reported as off-grid");
+        assert!(
+            !off.is_empty(),
+            "a half-unit cut must be reported as off-grid"
+        );
         for &i in &off {
             assert!(!g.vertices[i].is_integral());
         }
@@ -492,7 +610,10 @@ mod tests {
         let g = geometry_from_planes(&box_planes(8, 8, 8)).unwrap();
         assert!(g.off_grid_vertices(8).is_empty());
         assert!(g.off_grid_vertices(1).is_empty());
-        assert!(!g.off_grid_vertices(16).is_empty(), "8 is not a multiple of 16");
+        assert!(
+            !g.off_grid_vertices(16).is_empty(),
+            "8 is not a multiple of 16"
+        );
     }
 
     #[test]
@@ -536,7 +657,10 @@ mod tests {
         let m = parse_map(src).unwrap();
         let b = m.entities[0].prims[0].as_brush().unwrap();
         let (same, mirrored) = duplicate_plane_pairs(b);
-        assert!(same.contains(&(0, 4)), "same plane from other points: {same:?}");
+        assert!(
+            same.contains(&(0, 4)),
+            "same plane from other points: {same:?}"
+        );
         assert!(mirrored.contains(&(0, 5)), "mirrored plane: {mirrored:?}");
     }
 
@@ -553,7 +677,12 @@ mod tests {
     #[test]
     fn exact_hull_refuses_absurd_face_counts_rather_than_hanging() {
         let planes: Vec<IPlane> = (0..200)
-            .map(|i| IPlane { nx: 1, ny: 0, nz: 0, d: i })
+            .map(|i| IPlane {
+                nx: 1,
+                ny: 0,
+                nz: 0,
+                d: i,
+            })
             .collect();
         assert_eq!(
             geometry_from_planes(&planes),

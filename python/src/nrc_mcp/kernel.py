@@ -59,9 +59,7 @@ def nrc_binary() -> Path:
         p = root / rel
         if p.is_file():
             return p
-    raise KernelUnavailable(
-        "the `nrc` binary is not built.\n  Run: mise run kernel:build"
-    )
+    raise KernelUnavailable("the `nrc` binary is not built.\n  Run: mise run kernel:build")
 
 
 def load_map(path: str | Path):

@@ -9,7 +9,6 @@ way that would have failed correct maps (`docs/spec-corrections.md`).
 from __future__ import annotations
 
 import pytest
-
 from nrc_mcp import kernel
 
 FACES_BOX = [
@@ -47,12 +46,16 @@ def test_missing_worldspawn(k):
 
 
 def test_mirrored_plane_is_an_error(k):
-    src = world(brush([
-        "( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) a/b 0 0 0 0.5 0.5 0 0 0",
-        "( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) a/b 0 0 0 0.5 0.5 0 0 0",
-        "( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) a/b 0 0 0 0.5 0.5 0 0 0",
-        "( 0 8 0 ) ( 1 8 0 ) ( 0 8 1 ) a/b 0 0 0 0.5 0.5 0 0 0",
-    ]))
+    src = world(
+        brush(
+            [
+                "( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) a/b 0 0 0 0.5 0.5 0 0 0",
+                "( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) a/b 0 0 0 0.5 0.5 0 0 0",
+                "( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) a/b 0 0 0 0.5 0.5 0 0 0",
+                "( 0 8 0 ) ( 1 8 0 ) ( 0 8 1 ) a/b 0 0 0 0.5 0.5 0 0 0",
+            ]
+        )
+    )
     v = k.Map.parse(src).validate(severity_min="info")
     f = next(x for x in v["findings"] if x["code"] == "BRUSH_MIRRORED_PLANE")
     assert f["severity"] == "error"
@@ -76,7 +79,8 @@ def test_out_of_bounds_coordinate(k):
 def test_collinear_face_is_distinguished_from_off_grid(k):
     collinear = ["( 0 0 0 ) ( 8 0 0 ) ( 16 0 0 ) a/b 0 0 0 0.5 0.5 0 0 0", *FACES_BOX[1:]]
     f = next(
-        x for x in k.Map.parse(world(brush(collinear))).validate(severity_min="info")["findings"]
+        x
+        for x in k.Map.parse(world(brush(collinear))).validate(severity_min="info")["findings"]
         if x["code"] == "BRUSH_DEGENERATE"
     )
     assert "collinear" in f["message"]

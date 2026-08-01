@@ -9,9 +9,7 @@ which prevents a repeat is actually in place, not just documented.
 from __future__ import annotations
 
 import pytest
-
 from nrc_mcp import profiles, tasks
-
 
 # ---------------------------------------------------------------------------
 # Profiles

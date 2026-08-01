@@ -34,7 +34,10 @@ impl std::error::Error for ParseError {}
 
 /// Parse a `.map` source into a document.
 pub fn parse_map(src: &str) -> Result<Map, ParseError> {
-    let toks = tokenize(src).map_err(|e| ParseError { line: e.line, message: e.message })?;
+    let toks = tokenize(src).map_err(|e| ParseError {
+        line: e.line,
+        message: e.message,
+    })?;
     let mut p = Parser { src, toks, pos: 0 };
     p.map()
 }
@@ -59,7 +62,10 @@ impl<'a> Parser<'a> {
     }
 
     fn err<T>(&self, message: impl Into<String>) -> Result<T, ParseError> {
-        Err(ParseError { line: self.line(), message: message.into() })
+        Err(ParseError {
+            line: self.line(),
+            message: message.into(),
+        })
     }
 
     fn advance(&mut self) -> &Tok {
@@ -125,7 +131,11 @@ impl<'a> Parser<'a> {
     /// Consecutive comments that stand on their own line.
     fn own_line_comments(&mut self) -> Vec<String> {
         let mut out = Vec::new();
-        while let Tok::Comment { text, own_line: true } = self.peek() {
+        while let Tok::Comment {
+            text,
+            own_line: true,
+        } = self.peek()
+        {
             out.push(text.clone());
             self.advance();
         }
@@ -134,7 +144,11 @@ impl<'a> Parser<'a> {
 
     /// A comment on the same line as what we just parsed.
     fn trailing_comment(&mut self) -> Option<String> {
-        if let Tok::Comment { text, own_line: false } = self.peek() {
+        if let Tok::Comment {
+            text,
+            own_line: false,
+        } = self.peek()
+        {
             let t = text.clone();
             self.advance();
             return Some(t);
@@ -178,8 +192,9 @@ impl<'a> Parser<'a> {
                 }
                 other => {
                     let d = other.describe();
-                    return self
-                        .err(format!("expected an entity block or end of file, found {d}"));
+                    return self.err(format!(
+                        "expected an entity block or end of file, found {d}"
+                    ));
                 }
             }
         }
@@ -249,7 +264,11 @@ impl<'a> Parser<'a> {
             None => {
                 let faces = self.face_list()?;
                 self.expect(&Tok::RBrace)?;
-                Ok(Primitive::Brush(Brush { leading, style: BrushStyle::Bare, faces }))
+                Ok(Primitive::Brush(Brush {
+                    leading,
+                    style: BrushStyle::Bare,
+                    faces,
+                }))
             }
             Some(kw) if kw.starts_with("patch") => {
                 let kw = kw.to_string();
@@ -276,7 +295,11 @@ impl<'a> Parser<'a> {
             Some(kw) => {
                 let kw = kw.to_string();
                 let text = self.skip_balanced_block(open_tok)?;
-                Ok(Primitive::Raw(RawBlock { leading, keyword: kw, text }))
+                Ok(Primitive::Raw(RawBlock {
+                    leading,
+                    keyword: kw,
+                    text,
+                }))
             }
         }
     }
@@ -302,8 +325,7 @@ impl<'a> Parser<'a> {
                 Tok::Eof => {
                     return Err(ParseError {
                         line: start_line,
-                        message: "unterminated block: reached end of file looking for '}'"
-                            .into(),
+                        message: "unterminated block: reached end of file looking for '}'".into(),
                     })
                 }
                 _ => {}
@@ -380,16 +402,20 @@ impl<'a> Parser<'a> {
 
         let tex = if matches!(self.peek(), Tok::LBracket) {
             if bp_matrix.is_some() {
-                return self.err(
-                    "face has both a brush-primitives texture matrix and Valve 220 axes",
-                );
+                return self
+                    .err("face has both a brush-primitives texture matrix and Valve 220 axes");
             }
             let u = self.bracket_quad("texture U axis")?;
             let v = self.bracket_quad("texture V axis")?;
             let rotate = self.expect_num("texture rotation")?;
             let sx = self.expect_num("texture X scale")?;
             let sy = self.expect_num("texture Y scale")?;
-            TexDef::Valve220 { u, v, rotate, scale: [sx, sy] }
+            TexDef::Valve220 {
+                u,
+                v,
+                rotate,
+                scale: [sx, sy],
+            }
         } else if let Some(m) = bp_matrix {
             TexDef::BrushPrimitives { m }
         } else {
@@ -402,7 +428,11 @@ impl<'a> Parser<'a> {
                 self.expect_num("texture X scale")?,
                 self.expect_num("texture Y scale")?,
             ];
-            TexDef::Axial { shift, rotate, scale }
+            TexDef::Axial {
+                shift,
+                rotate,
+                scale,
+            }
         };
 
         // Whatever remains on this line is the optional contents/flags/value trio, and
@@ -420,10 +450,15 @@ impl<'a> Parser<'a> {
         }
 
         let (surface, extra) = if rest.len() >= 3 {
-            let parse3 = |s: &str| -> Option<Num> { s.parse::<f64>().ok().map(|v| Num::parsed(s, v)) };
+            let parse3 =
+                |s: &str| -> Option<Num> { s.parse::<f64>().ok().map(|v| Num::parsed(s, v)) };
             match (parse3(&rest[0]), parse3(&rest[1]), parse3(&rest[2])) {
                 (Some(contents), Some(flags), Some(value)) => (
-                    Some(SurfaceFlags { contents, flags, value }),
+                    Some(SurfaceFlags {
+                        contents,
+                        flags,
+                        value,
+                    }),
                     rest[3..].to_vec(),
                 ),
                 // Three non-numeric trailing tokens is not a flag trio; keep them raw
@@ -436,7 +471,15 @@ impl<'a> Parser<'a> {
 
         let trailing = self.trailing_comment();
 
-        Ok(Face { leading: Vec::new(), trailing, points, shader, tex, surface, extra })
+        Ok(Face {
+            leading: Vec::new(),
+            trailing,
+            points,
+            shader,
+            tex,
+            surface,
+            extra,
+        })
     }
 
     fn patch_body(&mut self, leading: Vec<String>, kind: String) -> Result<Patch, ParseError> {
@@ -492,7 +535,13 @@ impl<'a> Parser<'a> {
         self.expect(&Tok::RParen)?;
         self.expect(&Tok::RBrace)?;
 
-        Ok(Patch { leading, kind, shader, header, rows })
+        Ok(Patch {
+            leading,
+            kind,
+            shader,
+            header,
+            rows,
+        })
     }
 }
 
@@ -530,7 +579,11 @@ mod tests {
         assert_eq!(f.shader, "common/caulk");
         assert_eq!(f.points[0][2].value(), -8.0);
         match &f.tex {
-            TexDef::Axial { shift, rotate, scale } => {
+            TexDef::Axial {
+                shift,
+                rotate,
+                scale,
+            } => {
                 assert_eq!(shift[0].value(), 0.0);
                 assert_eq!(rotate.value(), 0.0);
                 // The formatting must survive: 0.500000, not 0.5.
@@ -539,7 +592,10 @@ mod tests {
             other => panic!("expected axial texdef, got {other:?}"),
         }
         let s = f.surface.as_ref().unwrap();
-        assert_eq!((s.contents.value(), s.flags.value(), s.value.value()), (0.0, 4.0, 0.0));
+        assert_eq!(
+            (s.contents.value(), s.flags.value(), s.value.value()),
+            (0.0, 4.0, 0.0)
+        );
     }
 
     #[test]
@@ -565,7 +621,11 @@ brushDef
         match &f.tex {
             TexDef::BrushPrimitives { m } => {
                 assert_eq!(m[0][0].value(), 0.0078125);
-                assert_eq!(m[0][2].to_string(), "-0", "negative zero must stay verbatim");
+                assert_eq!(
+                    m[0][2].to_string(),
+                    "-0",
+                    "negative zero must stay verbatim"
+                );
                 assert_eq!(m[1][0].to_string(), "-0");
             }
             other => panic!("expected brush primitives, got {other:?}"),
@@ -589,7 +649,12 @@ brushDef
         let f = &m.entities[0].prims[0].as_brush().unwrap().faces[0];
         assert_eq!(f.shader, "WALL01");
         match &f.tex {
-            TexDef::Valve220 { u, v, rotate, scale } => {
+            TexDef::Valve220 {
+                u,
+                v,
+                rotate,
+                scale,
+            } => {
                 assert_eq!(u[3].value(), 16.0);
                 assert_eq!(v[1].value(), -1.0);
                 assert_eq!(rotate.value(), 0.0);
@@ -598,7 +663,11 @@ brushDef
             other => panic!("expected valve220, got {other:?}"),
         }
         // Valve 220 faces normally carry no flag trio, and we must not invent one.
-        assert!(f.surface.is_none(), "surface flags should be absent, got {:?}", f.surface);
+        assert!(
+            f.surface.is_none(),
+            "surface flags should be absent, got {:?}",
+            f.surface
+        );
         assert!(f.extra.is_empty());
     }
 
@@ -740,15 +809,17 @@ someFutureDef
         assert!(e.message.contains("has no value"), "got {}", e.message);
         assert_eq!(e.line, 3);
 
-        let e = parse_map("{\n{\n( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) sh 0 0 0 0.5\n}\n}\n")
-            .unwrap_err();
+        let e = parse_map("{\n{\n( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) sh 0 0 0 0.5\n}\n}\n").unwrap_err();
         assert!(
             e.message.contains("texture Y scale"),
             "a truncated axial texdef should name the missing field, got {}",
             e.message
         );
 
-        assert!(parse_map("{\n\"a\" \"b\"\n").is_err(), "unterminated entity");
+        assert!(
+            parse_map("{\n\"a\" \"b\"\n").is_err(),
+            "unterminated entity"
+        );
         assert!(parse_map("garbage").is_err());
     }
 
@@ -768,6 +839,9 @@ someFutureDef
             .surface
             .as_ref()
             .unwrap();
-        assert_eq!((s.contents.value(), s.flags.value(), s.value.value()), (1.0, 2.0, 3.0));
+        assert_eq!(
+            (s.contents.value(), s.flags.value(), s.value.value()),
+            (1.0, 2.0, 3.0)
+        );
     }
 }

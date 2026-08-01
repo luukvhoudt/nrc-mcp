@@ -104,14 +104,23 @@ fn write_face(s: &mut String, f: &Face, nl: &str) {
             s.push_str(" ) ");
             let _ = write!(s, "{}", f.shader);
         }
-        TexDef::Axial { shift, rotate, scale } => {
+        TexDef::Axial {
+            shift,
+            rotate,
+            scale,
+        } => {
             let _ = write!(
                 s,
                 "{} {} {} {} {} {}",
                 f.shader, shift[0], shift[1], rotate, scale[0], scale[1]
             );
         }
-        TexDef::Valve220 { u, v, rotate, scale } => {
+        TexDef::Valve220 {
+            u,
+            v,
+            rotate,
+            scale,
+        } => {
             let _ = write!(s, "{} ", f.shader);
             write_quad(s, u);
             s.push(' ');
@@ -186,8 +195,10 @@ pub fn renumber_radiant_comments(m: &mut Map) {
         e.leading.retain(|c| !is_marker(c));
         e.leading.insert(0, format!("// entity {ei}"));
 
-        let mut bi = 0usize;
-        for p in e.prims.iter_mut() {
+        // Brush numbering restarts per entity, matching upstream's writer, which resets its
+        // counter in `Entity_ExportTokens`. Patches share the counter and are also labelled
+        // `// brush N` — again matching upstream rather than being tidier than it.
+        for (bi, p) in e.prims.iter_mut().enumerate() {
             let leading = match p {
                 Primitive::Brush(b) => &mut b.leading,
                 Primitive::Patch(pt) => &mut pt.leading,
@@ -195,7 +206,6 @@ pub fn renumber_radiant_comments(m: &mut Map) {
             };
             leading.retain(|c| !is_marker(c));
             leading.insert(0, format!("// brush {bi}"));
-            bi += 1;
         }
     }
 }
@@ -370,7 +380,10 @@ someFutureDef
             _ => unreachable!(),
         }
         let out = write_map(&m);
-        assert!(out.contains("( 0 0 16 ) ( 1 0 0 )"), "the edit should apply:\n{out}");
+        assert!(
+            out.contains("( 0 0 16 ) ( 1 0 0 )"),
+            "the edit should apply:\n{out}"
+        );
         assert!(
             out.contains("( 0 0 8 ) ( 1 0 8 ) ( 0 1 8 ) a/b 0 0 0 0.500000 0.500000 0 0 0"),
             "the untouched face must keep its 0.500000 formatting:\n{out}"
@@ -394,7 +407,10 @@ someFutureDef
         renumber_radiant_comments(&mut m);
         let out = write_map(&m);
         assert!(out.starts_with("// entity 0\n"), "{out}");
-        assert!(out.contains("// brush 0\n// a note from the mapper\n"), "{out}");
+        assert!(
+            out.contains("// brush 0\n// a note from the mapper\n"),
+            "{out}"
+        );
         assert!(!out.contains("entity 7"));
         assert!(!out.contains("brush 99"));
     }
@@ -431,7 +447,10 @@ someFutureDef
         // resolving a shader is an explicit step, never an accidental rewrite.
         let src = "{\n{\n( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) NULL 0 0 0 0.5 0.5 0 0 0\n}\n}\n";
         let m = parse_map(src).unwrap();
-        assert_eq!(m.entities[0].prims[0].as_brush().unwrap().faces[0].shader, "NULL");
+        assert_eq!(
+            m.entities[0].prims[0].as_brush().unwrap().faces[0].shader,
+            "NULL"
+        );
         assert_eq!(write_map(&m), src);
     }
 }

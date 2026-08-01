@@ -334,9 +334,7 @@ def resource_current_map() -> str:
     if b:
         lines.append(f"bounds: {b['min']} .. {b['max']}  (size {b['size']})")
     if s["unevaluated_brushes"]:
-        lines.append(
-            f"NOTE: {s['unevaluated_brushes']} brush(es) could not be evaluated exactly"
-        )
+        lines.append(f"NOTE: {s['unevaluated_brushes']} brush(es) could not be evaluated exactly")
     for w in SESSION.warnings:
         lines.append(f"WARNING: {w}")
     top = ", ".join(f"{t['shader']} ({t['faces']})" for t in s["top_shaders"][:8])
@@ -349,8 +347,16 @@ def describe_surface() -> str:
     lines = ["nrc-mcp surface", "", "TOOLS"]
     for name in sorted(
         [
-            "map_open", "map_stats", "map_save", "query_entities", "brush_geometry",
-            "validate", "task_list", "task_run", "compile_map", "profile_summary",
+            "map_open",
+            "map_stats",
+            "map_save",
+            "query_entities",
+            "brush_geometry",
+            "validate",
+            "task_list",
+            "task_run",
+            "compile_map",
+            "profile_summary",
         ]
     ):
         fn = globals().get(name)
