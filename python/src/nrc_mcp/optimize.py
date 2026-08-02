@@ -1056,28 +1056,31 @@ def parse_shader_file(path: str | Path) -> list[dict[str, Any]]:
 
 
 def _referenced_shaders(mp) -> tuple[dict[str, int], int]:
-    """Shader names the map's brush faces reference, with a face count each.
+    """Shader names the map references, with a surface count each.
 
-    **Patch shaders are not included, and the audit says so rather than working around it.**
-    `brush_geometry` refuses a patch and nothing in the binding exposes a patch's shader, so the
-    only way to reach one would be a second parser of the `.map` text — which is the thing the
-    binding exists to prevent. The patch count comes back alongside the names so `shader_audit`
-    can report exactly how much it could not see.
+    Covers brush faces *and* patches. Patches used to be excluded because the binding exposed no
+    way to reach a patch's shader, and skipping them misreported twice over: a patch-only shader
+    looked unreferenced, and a patch's missing shader went unreported. `Map.patches()` closes that,
+    so nothing here parses `.map` text.
 
     Names get the `textures/` prefix back, because that is what q3map2's own readers do
-    (`map.cpp:1009` for faces, `patch.cpp:207` for patches) and a shader script is written with
-    it.
+    (`map.cpp:1009` for faces, `patch.cpp:207` for patches) and a shader script is written with it.
     """
     counts: dict[str, int] = {}
     patches = 0
     for index, info in enumerate(mp.entities(with_keys=False)):
-        patches += int(info.get("patches") or 0)
         for _, g in _brushes(mp, index, info):
             for shader in g.get("shaders") or []:
                 if shader == EMPTY_SHADER:
                     continue
                 key = SHADER_NAME_PREFIX + shader
                 counts[key] = counts.get(key, 0) + 1
+    for patch in mp.patches():
+        patches += 1
+        shader = patch.get("shader") or ""
+        if shader and shader != EMPTY_SHADER:
+            key = SHADER_NAME_PREFIX + shader
+            counts[key] = counts.get(key, 0) + 1
     return counts, patches
 
 
@@ -1127,12 +1130,10 @@ def shader_audit(
         reported separately and unverified, because whether the *engine* then falls back to an
         implicit image was not confirmed against engine source.
 
-    **Scope limit: brush faces only.** The kernel's Python binding exposes shaders per brush
-    face and nothing for patches, so a patch's shader is invisible here. On a map with patches
-    that skews two of the four reports — a shader used only by patches reads as unreferenced,
-    and a patch's missing shader is not reported at all — so `SHADER_PATCHES_NOT_SCANNED` states
-    the patch count outright instead of letting the numbers imply a completeness they do not
-    have. Closing it needs a patch accessor on the kernel, not a parser here.
+    Covers brush faces and patches both. Patches were once out of reach — the binding exposed no
+    patch shader — and skipping them skewed two of the four reports: a patch-only shader read as
+    unreferenced, and a patch's missing shader went unreported. `Map.patches()` closed that, so the
+    counts here are complete without anything re-parsing the `.map`.
     """
     mp = load_map(map_path)
     referenced, patches = _referenced_shaders(mp)
@@ -1280,26 +1281,6 @@ def shader_audit(
             )
         )
 
-    if patches:
-        findings.append(
-            _finding(
-                "SHADER_PATCHES_NOT_SCANNED",
-                "warning",
-                f"this map has {patches} patch(es) whose shaders were not examined: the kernel's "
-                "Python binding exposes shaders per brush face and nothing for patches. So a "
-                "shader used only by a patch appears in the unreferenced list wrongly, and a "
-                "patch referencing a shader that does not exist is not reported at all. Treat "
-                "both lists as covering brush faces only.",
-                "verified",
-                source="nrc_py.Map.brush_geometry exposes brush faces only",
-                fix_hint=(
-                    "add a patch accessor to the kernel that returns a patch's shader, then "
-                    "include patches in _referenced_shaders"
-                ),
-                detail={"patches": patches},
-            )
-        )
-
     for message in parse_errors:
         findings.append(
             _finding(
@@ -1326,7 +1307,7 @@ def shader_audit(
         "reserved_prefixes": sorted(reserved),
         "findings": _sorted(findings),
         "summary": _summarize(findings),
-        "patches_not_scanned": patches,
+        "patches_not_scanned": patches,  # kept for compatibility; patches ARE scanned now
         "notes": [
             "Shader names are compared with the textures/ prefix q3map2's readers add "
             "(map.cpp:1009, patch.cpp:207); the .map stores them without it.",

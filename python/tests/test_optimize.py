@@ -712,16 +712,17 @@ def test_shader_audit_declares_that_it_cannot_see_patch_shaders(tmp_path, kernel
     )
 
     out = optimize.shader_audit(map_path, [scripts], profile_id=None)
-    assert out["patches_not_scanned"] == 1
-    # The brush's shader is counted; the patch's is not, so it lands in unreferenced.
-    assert out["reference_counts"] == {"textures/common/caulk": 6}
-    assert out["unreferenced"] == ["textures/mymap/curve"]
-
-    gap = [f for f in out["findings"] if f["code"] == "SHADER_PATCHES_NOT_SCANNED"]
-    assert len(gap) == 1
-    assert gap[0]["severity"] == "warning"
-    assert gap[0]["confidence"] == "verified"
-    assert gap[0]["detail"]["patches"] == 1
+    assert out["patches_not_scanned"] == 1, "the patch count is still reported"
+    # A patch's shader is now counted like a brush face's, via Map.patches(). Before that existed
+    # the patch shader was invisible and landed in `unreferenced`, which was wrong twice over.
+    assert out["reference_counts"] == {
+        "textures/common/caulk": 6,
+        "textures/mymap/curve": 1,
+    }
+    assert out["unreferenced"] == [], "a patch-only shader is referenced, not unreferenced"
+    assert not [f for f in out["findings"] if f["code"] == "SHADER_PATCHES_NOT_SCANNED"], (
+        "the patch gap is closed, so the finding that declared it must be gone"
+    )
 
 
 def test_shader_audit_reports_a_directory_that_is_not_there(tmp_path, kernel_available):

@@ -507,7 +507,30 @@ def test_every_check_names_the_constant_it_used(tmp_path, kern, pid):
         assert check["constant"]["source"], check["check"]
     step = next(c for c in report["checks"] if c["check"] == "step_height")
     assert step["steps_needing_a_jump"] > 0, "a 32-unit rise is above the 18-unit step limit"
+    assert step["steps_needing_a_ledge_grab"] == 0
     assert step["jump_constant"]["value"] == pytest.approx(66.5)
+
+
+def test_a_rise_between_the_jump_and_grab_limits_is_classified_as_a_ledge(
+    tmp_path, kern, pid, constants
+):
+    """96 units is above jump_up_max (66.5) and below ledge_grab_max (114.625).
+
+    Three profile constants deciding one classification, which is the point: the ladder of
+    limits is data, so the report can say "ledge grab" instead of "too high".
+    """
+    assert constants.jump_up_max.value < 96 < constants.ledge_grab_max.value
+    brushes = [
+        box((0, 0, -16), (512, 512, 0)),
+        box((256, 0, 0), (512, 512, 96)),
+        box((0, 0, 320), (512, 512, 336)),
+    ]
+    path = write_map(tmp_path, brushes, name="ledge.map")
+    report = analysis.movement_check(path, profile_id=pid, cell=16)
+    step = next(c for c in report["checks"] if c["check"] == "step_height")
+    assert step["steps_needing_a_ledge_grab"] > 0
+    assert step["steps_needing_a_jump"] == 0
+    assert step["ledge_grab_constant"]["confidence"] == "verified"
 
 
 # ---------------------------------------------------------------------------

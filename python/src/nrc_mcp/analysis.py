@@ -223,6 +223,7 @@ class Movement:
     headroom_stand: Constant
     headroom_crouch: Constant | None
     jump_up_max: Constant | None
+    ledge_grab_max: Constant | None
     fall_no_damage: Constant | None
     player_width: Constant | None
     eye_height: Constant
@@ -235,6 +236,7 @@ class Movement:
             "headroom_stand",
             "headroom_crouch",
             "jump_up_max",
+            "ledge_grab_max",
             "fall_no_damage",
             "player_width",
             "eye_height",
@@ -329,6 +331,7 @@ def movement_constants(profile_id: str) -> Movement:
         headroom_stand=stand,
         headroom_crouch=_constant(section, "headroom_crouch"),
         jump_up_max=_constant(section, "jump_up_max"),
+        ledge_grab_max=_constant(section, "ledge_grab_max"),
         fall_no_damage=fall,
         player_width=width,
         eye_height=eye,
@@ -2359,7 +2362,12 @@ def movement_check(
     else:
         step_samples = walkable
 
-    steps_ok = needs_jump = blocked_steps = 0
+    # Each rise is classified against the highest limit the profile states, so the report
+    # distinguishes a step from a jump from a ledge grab. Anything above every stated limit is
+    # a wall rather than a rise anyone would attempt, and is left out rather than counted.
+    grab = movement.ledge_grab_max
+    window = (grab or jump or step).value
+    steps_ok = needs_jump = needs_grab = 0
     marginal: list[dict[str, Any]] = []
     for cell_index in step_samples:
         x, y, floor_z = navgrid.centre(cell_index)
@@ -2373,10 +2381,8 @@ def movement_check(
             there = column_intervals(solids, index, nx_, ny_)
             if not there:
                 continue
-            # The nearest solid top not more than a jump above us is the surface we would
-            # actually try to walk onto.
-            reach = my_floor + (jump.value if jump else step.value)
-            tops = [hi for _lo, hi in there if my_floor - navgrid.cell <= hi <= reach]
+            # The lowest surface within reach is the one we would actually try to get onto.
+            tops = [hi for _lo, hi in there if my_floor - navgrid.cell <= hi <= my_floor + window]
             if not tops:
                 continue
             rise = min(tops) - my_floor
@@ -2392,17 +2398,18 @@ def movement_check(
                         }
                     )
             else:
-                blocked_steps += 1
+                needs_grab += 1
 
     checks.append(
         {
             "check": "step_height",
             "constant": step.as_dict(),
             "jump_constant": jump.as_dict() if jump else None,
+            "ledge_grab_constant": grab.as_dict() if grab else None,
             "sampled_positions": len(step_samples),
             "steps_within_step_height": steps_ok,
             "steps_needing_a_jump": needs_jump,
-            "steps_too_high_to_jump": blocked_steps,
+            "steps_needing_a_ledge_grab": needs_grab,
             "marginal_steps": sorted(marginal, key=lambda r: r["rise"])[:top],
         }
     )

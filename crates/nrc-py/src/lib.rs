@@ -290,6 +290,41 @@ impl PyMap {
         Ok(out)
     }
 
+    /// Every patch in the map, with its shader and dimensions.
+    ///
+    /// `brush_geometry` refuses a patch, and without this a caller wanting patch shaders has to
+    /// re-parse the `.map` text — a second, worse parser, which is exactly what this binding
+    /// exists to prevent. A shader audit that skips patches misreports twice over: a patch-only
+    /// shader looks unreferenced, and a patch's missing shader is not reported at all.
+    fn patches<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let out = PyList::empty(py);
+        for (ei, e) in self.inner.entities.iter().enumerate() {
+            for (pi, prim) in e.prims.iter().enumerate() {
+                let Primitive::Patch(p) = prim else { continue };
+                let d = PyDict::new(py);
+                d.set_item("entity", ei)?;
+                d.set_item("primitive", pi)?;
+                d.set_item("classname", e.classname())?;
+                d.set_item("kind", &p.kind)?;
+                d.set_item("shader", &p.shader)?;
+                d.set_item("width", p.width())?;
+                d.set_item("height", p.height())?;
+                d.set_item("dimensions_consistent", p.dimensions_consistent())?;
+                let mut bb = nrc_core::math::Aabb::EMPTY;
+                for c in p.control_points() {
+                    bb.extend(c);
+                }
+                if bb.is_empty() {
+                    d.set_item("bounds", py.None())?;
+                } else {
+                    d.set_item("bounds", (bb.min.to_array(), bb.max.to_array()))?;
+                }
+                out.append(d)?;
+            }
+        }
+        Ok(out)
+    }
+
     /// Axis-aligned bounds as `(min, max)`, or `None` for an empty map.
     fn bounds(&self) -> Option<([f64; 3], [f64; 3])> {
         let b = self.inner.bounds();
