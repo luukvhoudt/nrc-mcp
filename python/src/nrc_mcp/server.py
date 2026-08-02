@@ -1,11 +1,12 @@
 """The MCP surface (§8).
 
-Phase 2 scope: read-only analysis, the mise task surface, and the compile driver. Sculpting
-(§4), the Blender handoff (§5) and the optimization suite (§6) are not here yet, and the
-tool list deliberately does not pretend otherwise — a tool that exists but does nothing is
-worse than one that is absent, because the agent will plan around it.
+Read-only analysis, rendering, game-profile validation, the compile driver, BSP
+introspection, packaging and the mise task surface. Sculpting (§4) and the Blender handoff
+(§5) are not here yet, and the tool list deliberately does not pretend otherwise — a tool
+that exists but does nothing is worse than one that is absent, because the agent will plan
+around it.
 
-Two conventions worth knowing:
+Three conventions worth knowing:
 
 **One open map.** Tools operate on a session map opened with `map_open`, rather than taking
 a path every time. That keeps a sequence of queries consistent with each other, and makes
@@ -15,6 +16,11 @@ a path every time. That keeps a sequence of queries consistent with each other, 
 and it verifies the round-trip first: if the kernel cannot reproduce the file it loaded, it
 refuses to write, because a tool that cannot reproduce your file has no business replacing
 it.
+
+**Confidence is enforced, not advertised.** Findings from game rules carry a `confidence`,
+and an unverified rule is downgraded so it can never fail a build. That is not ceremony:
+three of the four spawn rules the design document called verified were wrong, and one would
+have failed correct maps (`nrc://corrections`).
 """
 
 from __future__ import annotations
@@ -35,7 +41,9 @@ except ImportError:  # pragma: no cover - older SDKs
     from mcp.server.fastmcp import FastMCP as _Server
     from mcp.server.fastmcp import Image as _Image
 
-from . import profiles, tasks
+from . import bsp as bspmod
+from . import pack as packmod
+from . import profiles, rules, tasks
 from .kernel import KernelUnavailable, load_map, repo_root, run_mise_task
 
 mcp = _Server("nrc-mcp")
@@ -189,9 +197,8 @@ def validate(grid: int | None = None, severity_min: str = "warning") -> dict:
     safe to treat as hard failures.
 
     Scope note: these are the game-agnostic checks — degenerate brushes, duplicate and
-    mirrored planes, off-grid vertices, thin brushes, patch problems. Game-specific rules
-    (spawns, gametypes, objectives) come from the profile and are not wired into this tool
-    yet; `profile_summary` shows what the profile knows.
+    mirrored planes, off-grid vertices, thin brushes, patch problems. For the game's own rules
+    (spawn arrangement, objective counts, gametype keys) call `validate_profile`.
     """
     m = SESSION.require()
     return m.validate(
@@ -395,6 +402,139 @@ def render_player_eye(
 
 
 # ---------------------------------------------------------------------------
+# Analyze (profile-driven) and ship (§6.2, §6.4, §7.1)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def validate_profile(profile_id: str | None = None, severity_min: str = "info") -> dict:
+    """Validate the open map's entities against the active game profile.
+
+    Complements `validate`, which covers game-agnostic geometry. This checks the game's own
+    rules: spawn arrangement, objective counts, gametype keys.
+
+    Every rule is data in the profile, and every finding carries a `confidence`. **An
+    unverified rule can never produce an error** — it is downgraded to `info` — because three
+    of the four spawn rules the design document called verified were wrong, and one would have
+    failed correct maps. `nrc://corrections` has the details.
+    """
+    m = SESSION.require()
+    pid = profile_id or active_profile()
+    if not pid:
+        return {
+            "error": "no profile selected; set NRC_PROFILE or pass profile_id",
+            "available": profiles.available(),
+        }
+    try:
+        ents = m.entities()
+        found = rules.evaluate(pid, ents) + rules.unknown_classnames(pid, ents)
+    except profiles.ProfileError as e:
+        return {"error": str(e), "available": profiles.available()}
+
+    floor = rules.SEVERITIES.index(severity_min) if severity_min in rules.SEVERITIES else 0
+    kept = [f for f in found if rules.SEVERITIES.index(f.severity) >= floor]
+    order = {"error": 0, "warning": 1, "info": 2}
+    kept.sort(key=lambda f: (order[f.severity], f.code))
+    return {
+        "profile": pid,
+        "entities_checked": len(ents),
+        "summary": rules.summarize(found),
+        "findings": [f.as_dict() for f in kept],
+    }
+
+
+@mcp.tool()
+def bsp_report(lumps_path: str, profile_id: str | None = None) -> dict:
+    """Read a compiled BSP's structure from an unpacked `-json` lump directory (§6.2).
+
+    Produce the directory with `task_run("bsp:json-unpack", [path_to_bsp])`.
+
+    Reports surfaces per shader (which shader is eating draw calls), surface types, lightmap
+    coverage, unreferenced shaders, and headroom. Headroom comes in two parts and the
+    distinction matters: **compiler limits** are read from this fork's source and are real,
+    but most of the classic Quake 3 ceilings were removed upstream, so there is nothing to
+    report for them. **Engine limits** come from the profile and are what decide whether the
+    map loads at all — a map can compile cleanly and still be rejected in game.
+    """
+    p = Path(lumps_path)
+    if not p.is_absolute():
+        p = repo_root() / p
+    try:
+        return bspmod.report(p, profile_id or active_profile() or None)
+    except bspmod.BspError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def bsp_entity_diff(lumps_path: str, source_map: str | None = None) -> dict:
+    """Compare a compiled BSP's entity lump against the source `.map` (§6.2).
+
+    Entities can be dropped silently at compile time — the editor's writer discards empty
+    group entities and q3map2 drops what it cannot place — so a count that quietly changed is
+    a real bug this catches.
+    """
+    p = Path(lumps_path)
+    if not p.is_absolute():
+        p = repo_root() / p
+    src = Path(source_map) if source_map else SESSION.path
+    if src is None:
+        return {"error": "no source map given and none is open"}
+    try:
+        return bspmod.entity_diff(p, src)
+    except bspmod.BspError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def pack_pk3(bsp: str, complevel: int | None = None, png: bool = False) -> dict:
+    """Build a release archive for a compiled BSP with `q3map2 -pk3` (§6.4).
+
+    The packer's own naming is the oracle: a `_FAILEDpack.pk3` means the BSP references a
+    resource that is not on disk, so the map would show missing content on a server even
+    though it compiled. That is reported as a failure whatever the exit code.
+    """
+    try:
+        return packmod.pack_pk3(bsp, complevel=complevel, png=png)
+    except packmod.PackError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def repack_analyze(bsp: str) -> dict:
+    """List every resource a compiled BSP references, via `q3map2 -repack -analyze` (§6.4).
+
+    Parsed from the compiler's own dump rather than traced independently — the compiler's view
+    of what a BSP needs is the one that decides whether the map works.
+    """
+    try:
+        return packmod.repack_analyze(bsp)
+    except packmod.PackError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def ship_check(
+    target: str | None = None, profile_id: str | None = None, pk3: str | None = None
+) -> dict:
+    """Run the release checklist (§6.4): naming, levelshot, arena file, package contents.
+
+    Conventions come from the profile's `packaging` section, and unverified ones produce
+    `info` rather than failures — the levelshot size and arena key list are community practice
+    rather than anything the gamepack documents.
+    """
+    t = target or (str(SESSION.path) if SESSION.path else None)
+    if t is None:
+        return {"error": "no target given and no map is open"}
+    pid = profile_id or active_profile()
+    if not pid:
+        return {"error": "no profile selected", "available": profiles.available()}
+    try:
+        return packmod.ship_check(t, pid, pk3=pk3)
+    except packmod.PackError as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
 # Project / meta
 # ---------------------------------------------------------------------------
 
@@ -554,6 +694,12 @@ TOOL_NAMES = (
     "render_camera",
     "render_contact_sheet",
     "render_player_eye",
+    "validate_profile",
+    "bsp_report",
+    "bsp_entity_diff",
+    "pack_pk3",
+    "repack_analyze",
+    "ship_check",
     "task_list",
     "task_run",
     "compile_map",

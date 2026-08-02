@@ -2622,3 +2622,235 @@ counts:
     utility: 7
     compiler: 4
     world: 1
+
+# ---------------------------------------------------------------------------
+# rules — declarative validation, evaluated by nrc_mcp.rules
+# ---------------------------------------------------------------------------
+#
+# Each rule is data. The engine contains no game-specific string, and the §7.4 seam lint
+# fails the build if one appears there.
+#
+# `confidence` is load-bearing, not decorative: the engine downgrades any rule that is not
+# `verified` to severity `info`, so an unverified rule can never fail a build. That guard
+# exists because the design document listed four Urban Terror spawn rules as verified and
+# three were wrong when checked against this gamepack — one of them (`UT_TS_SPAWN_SHARED`,
+# "Team Survivor needs dedicated spawn entities") would have failed correct maps. See
+# docs/spec-corrections.md. The corrected form of that rule is UT_TS_SEPARATE_GROUPS below.
+
+rules:
+  - id: UT_DEATHMATCH_SPAWN_REQUIRED
+    check: require_any
+    severity: error
+    confidence: verified
+    rule_source: "gamepack urtentities.ent: info_ut_spawn description"
+    message: >-
+      the map has no deathmatch spawn point ({expected}); the gamepack states one is needed
+      to spawn at all, in every gametype, not only Free-for-all
+    fix_hint: "add at least one info_player_deathmatch away from likely firefight centres"
+    params:
+      classnames: [info_player_deathmatch, info_player_start]
+
+  - id: UT_BOMB_SITE_COUNT
+    check: count_exact
+    severity: error
+    confidence: verified
+    rule_source: "gamepack urtentities.ent: info_ut_bombsite description"
+    message: >-
+      found {found} bomb site(s); the gamepack states a map MUST have exactly {expected} or it
+      crashes on load into bomb mode
+    fix_hint: "add or remove info_ut_bombsite entities until there are exactly two"
+    applies_when:
+      classname_present: info_ut_bombsite
+    params:
+      classname: info_ut_bombsite
+      count: 2
+
+  - id: UT_TS_SEPARATE_GROUPS
+    check: distinct_group_per_team
+    severity: error
+    confidence: verified
+    rule_source: "gamepack urtentities.ent: 'gametype 4 should be in separate groups for each team'"
+    message: >-
+      {found} spawn group(s) are shared between both teams for Team Survivor ({detail});
+      TS picks the two furthest-apart groups, so each team needs its own group names
+    fix_hint: "give each team its own group value, e.g. blue 1, red 2, blue 3, red 4"
+    params:
+      classname: info_ut_spawn
+      gametype_key: g_gametype
+      gametype: "4"
+      group_key: group
+      team_key: team
+
+  - id: UT_TEAM_SPAWN_NOT_IN_FFA
+    check: forbid_gametype
+    severity: error
+    confidence: verified
+    rule_source: "gamepack urtentities.ent: g_gametype offers only 3/4/5/6/7/8; notfree excludes FFA"
+    message: >-
+      {found} {classname} entity/entities list gametype 0 (Free-for-all), which this class
+      does not support — FFA uses info_player_deathmatch or info_player_start
+    fix_hint: "remove 0 from g_gametype; use info_player_deathmatch for Free-for-all"
+    params:
+      classname: info_ut_spawn
+      gametype_key: g_gametype
+      gametype: "0"
+
+  - id: UT_TEAM_SPAWN_NOT_IN_JUMP
+    check: forbid_gametype
+    severity: error
+    confidence: verified
+    rule_source: "gamepack urtentities.ent: g_gametype offers only 3/4/5/6/7/8; notfree excludes Jump"
+    message: >-
+      {found} {classname} entity/entities list gametype 9 (Jump Training), which this class
+      does not support
+    fix_hint: "remove 9 from g_gametype; jump maps use info_player_start"
+    params:
+      classname: info_ut_spawn
+      gametype_key: g_gametype
+      gametype: "9"
+
+  - id: UT_TEAM_SPAWN_TEAM_VALUE
+    check: key_in_enum
+    severity: warning
+    confidence: verified
+    rule_source: "gamepack urtentities.ent: info_ut_spawn team key described as '(red or blue)'"
+    message: >-
+      {found} {classname} entity/entities have a team value outside {expected} ({detail});
+      the gamepack does not formally constrain the key, but only these two are meaningful
+    params:
+      classname: info_ut_spawn
+      key: team
+      values: [red, blue]
+
+  - id: UT_TEAM_SPAWN_GROUP_MISSING
+    check: key_required
+    severity: warning
+    confidence: unverified
+    rule_source: "inferred: the spawn system selects by group, so an ungrouped team spawn is suspect"
+    message: >-
+      {found} {classname} entity/entities have no {key} key; grouping is how the game selects
+      spawn sets, so an ungrouped team spawn is probably a mistake — not stated as a hard
+      requirement anywhere, so this is advisory
+    params:
+      classname: info_ut_spawn
+      key: group
+
+  - id: UT_SPAWN_GROUP_SIZE
+    check: group_size
+    severity: info
+    confidence: unverified
+    rule_source: "gamepack worked example uses 8 per team; the design document's 16 is unsupported"
+    message: >-
+      {found} spawn group(s) do not hold {expected} points ({detail}); the gamepack's only
+      worked example uses eight per team, and no count is stated as required
+    params:
+      classname: info_ut_spawn
+      group_key: group
+      count: 8
+
+  - id: UT_SPAWN_SPACING
+    check: min_spacing
+    severity: info
+    confidence: unverified
+    rule_source: >-
+      derived from the verified player width (30.25) and the info_ut_spawn editor box
+      (32x32x70); the design document's ">= 16 units" figure appears nowhere in the gamepack
+    message: >-
+      {found} spawn pair(s) in the same group are closer than {expected} units ({detail});
+      the player is 30.25 wide, so closer spawns can overlap
+    params:
+      classname: info_ut_spawn
+      group_key: group
+      distance: 32
+
+# ---------------------------------------------------------------------------
+# engine_limits — what decides whether the map LOADS, as opposed to compiles
+# ---------------------------------------------------------------------------
+#
+# These live in the profile because they are a property of the game engine, not of this
+# toolchain (§7.4). They matter because this compiler removed most of the static Quake 3
+# ceilings — a map can compile cleanly and still be rejected by the engine.
+#
+# ALL UNVERIFIED. They are the classic Quake 3 values from documentation and recollection,
+# and nothing here has been read out of the Urban Terror engine or an ioquake3 checkout. The
+# rule engine and bsp_report therefore treat them as advisory. To promote one to `verified`,
+# read it out of engine source and cite the file and line, exactly as the compiler limits in
+# `nrc_mcp.bsp.COMPILER_LIMITS` are cited.
+#
+# `counts` names the field in bsp_report's `counts` to compare against.
+
+engine_limits:
+  brushes:
+    value: 32768
+    counts: brushes
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_BRUSHES (0x8000) — not read from engine source"
+  planes:
+    value: 131072
+    counts: planes
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_PLANES (0x20000) — not read from engine source"
+  shaders:
+    value: 1024
+    counts: shaders
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_SHADERS (0x400) — not read from engine source"
+  draw_surfaces:
+    value: 131072
+    counts: draw_surfaces
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_DRAW_SURFS (0x20000) — not read from engine source"
+  draw_verts:
+    value: 524288
+    counts: draw_verts
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_DRAW_VERTS (0x80000) — not read from engine source"
+  draw_indexes:
+    value: 524288
+    counts: draw_indexes
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_DRAW_INDEXES (0x80000) — not read from engine source"
+  models:
+    value: 1024
+    counts: models
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_MODELS (0x400) — not read from engine source"
+  vis_bytes:
+    value: 2097152
+    counts: vis_bytes
+    confidence: unverified
+    source: "classic Q3 MAX_MAP_VISIBILITY (0x200000) — not read from engine source"
+
+# ---------------------------------------------------------------------------
+# packaging — release conventions (ship_check reads these)
+# ---------------------------------------------------------------------------
+
+packaging:
+  confidence: verified
+  source: gamepack_gamefile
+  basegame: q3ut4
+  archive_extension: pk3
+  # Community convention, visible across every shipped map in the game directory.
+  map_name_pattern: "^ut4_[a-z0-9_]+$"
+  map_name_note: "released maps are named ut4_<name>, lowercase"
+  map_name_confidence: verified
+  levelshot:
+    directory: levelshots
+    # The game reads whatever size is present; 512x512 is what shipped maps use.
+    preferred_size: [512, 512]
+    confidence: unverified
+    note: "size not stated anywhere in the gamepack; taken from shipped maps"
+  arena:
+    directory: scripts
+    extension: arena
+    required_keys: [map, longname, type]
+    confidence: unverified
+    note: >-
+      the .arena mechanism is standard Quake 3, but the gamepack does not document which keys
+      Urban Terror requires; treat findings as advisory until confirmed against a shipped map
+  # Shaders under these names belong to the base game; a map shipping its own copy of one
+  # overrides it for every other map on the server. A classic "works for me" bug.
+  reserved_shader_prefixes: [common/, sfx/, gfx/, models/]
+  size_budget_bytes: 52428800
+  size_budget_confidence: unverified
+  size_budget_note: "50 MiB is a community norm for download comfort, not a hard limit"
