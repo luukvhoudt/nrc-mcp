@@ -185,6 +185,28 @@ corpus/              real, upstream-regression and synthetic test maps
 docs/                spec corrections and notes
 ```
 
+## The cost of refusing to guess
+
+The exact-predicate design has a price, and it shows up on real maps rather than on synthetic ones.
+
+`IVec3::try_from_vec3` refuses any coordinate that is not an exact integer within world bounds, and
+everything downstream then reports `Indeterminate` rather than picking a side. That is the right
+trade for correctness — a guessed side is a sliver and a sliver is a leak — but it means geometry
+whose *plane-defining points* are off-grid is not analysable at all. Rotated brushes are the common
+case.
+
+Measured on the corpus: `ut4_woolis` and `ut4_megastructunnel` are 100% evaluable, while
+**`ut4_dofa` has 478 of 1454 brushes the kernel declines to evaluate.** Those brushes are absent
+from the navgrid, so `analysis` reports the count, gives examples, and warns that a path may cross a
+wall. `validate` reports them as `BRUSH_NOT_EXACT` — a warning about the tool's reach, not an
+accusation against the map.
+
+The honest summary: this toolchain is fully precise about axis-aligned and 45° geometry, and
+partially blind to arbitrarily rotated geometry. Every report says which it is looking at. Closing
+the gap means either snapping input (which changes the map) or adaptive floating-point predicates
+(Shewchuk-style expansions), and `crates/nrc-core/src/exact.rs` explains why the integer route was
+taken first.
+
 ## What is deliberately not built
 
 Three things are absent on purpose rather than by omission, and knowing which is which saves time:
