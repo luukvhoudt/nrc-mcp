@@ -25,6 +25,7 @@ have failed correct maps (`nrc://corrections`).
 
 from __future__ import annotations
 
+import contextlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -824,10 +825,8 @@ def asset_plan(
     entity = "a model entity"
     pid = active_profile()
     if pid:
-        try:
+        with contextlib.suppress(profiles.ProfileError):
             entity = str((profiles.load(pid).get("assets") or {}).get("model_entity") or entity)
-        except profiles.ProfileError:
-            pass
     return _tier(
         4,
         f"mesh, placed with {entity}",
