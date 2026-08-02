@@ -12,7 +12,8 @@ name = "nrc"
 path = "src/main.rs"
 
 [dependencies]
-nrc-core = { workspace = true }
+nrc-core   = { workspace = true }
+nrc-render = { workspace = true }
 # JSON only, and only here. The kernel itself stays dependency-free (see
 # crates/nrc-core/Cargo.toml); a serialization format is a front-end concern.
 serde_json = "1"

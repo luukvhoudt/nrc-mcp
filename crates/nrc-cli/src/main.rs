@@ -27,11 +27,22 @@ USAGE:
     nrc stats <file.map> [--grid N]    map statistics as JSON
     nrc validate <file.map> [--grid N] geometry and format findings as JSON
     nrc normalize <file.map> --write   re-serialize in place (refuses unless --write)
+    nrc render <file.map> --out <png>  render a view (the §4.2 visual feedback loop)
 
 OPTIONS:
     --grid N        authoring grid to measure alignment against (default 1)
     --quiet         JSON only, no human-readable summary on stderr
     --pretty        indent the JSON
+
+RENDER OPTIONS:
+    --out PATH      where to write the PNG (required)
+    --view V        top | front | side | perspective | sheet     (default sheet)
+    --overlay O     shaded | structural | caulk | offgrid        (default shaded)
+    --size WxH      image size, e.g. 1200x900                    (default 1200x900)
+    --grid-spacing N  world-unit grid to draw, 0 to disable      (default 64)
+    --wireframe     force edges only; --solid forces filled faces
+    --hide-invisible  skip caulk/nodraw/clip/trigger surfaces
+                    (default: wireframe for ortho, solid for perspective)
 
 EXIT CODES:
     0  clean    1  findings present / did not round-trip    2  tool error
@@ -50,6 +61,13 @@ fn main() -> ExitCode {
     let mut quiet = false;
     let mut pretty = false;
     let mut write = false;
+    let mut out: Option<PathBuf> = None;
+    let mut view = "sheet".to_string();
+    let mut overlay = "shaded".to_string();
+    let mut size = (1200u32, 900u32);
+    let mut grid_spacing = 64.0f64;
+    let mut wireframe: Option<bool> = None;
+    let mut hide_invisible = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -64,6 +82,44 @@ fn main() -> ExitCode {
             "--quiet" => quiet = true,
             "--pretty" => pretty = true,
             "--write" => write = true,
+            "--wireframe" => wireframe = Some(true),
+            "--solid" => wireframe = Some(false),
+            "--hide-invisible" => hide_invisible = true,
+            "--out" => {
+                i += 1;
+                match args.get(i) {
+                    Some(p) => out = Some(PathBuf::from(p)),
+                    None => return fail("--out needs a path"),
+                }
+            }
+            "--view" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => view = v.clone(),
+                    None => return fail("--view needs a value"),
+                }
+            }
+            "--overlay" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => overlay = v.clone(),
+                    None => return fail("--overlay needs a value"),
+                }
+            }
+            "--size" => {
+                i += 1;
+                match args.get(i).and_then(|s| parse_size(s)) {
+                    Some(s) => size = s,
+                    None => return fail("--size needs WxH, e.g. 1200x900"),
+                }
+            }
+            "--grid-spacing" => {
+                i += 1;
+                match args.get(i).and_then(|s| s.parse::<f64>().ok()) {
+                    Some(g) if g >= 0.0 => grid_spacing = g,
+                    _ => return fail("--grid-spacing needs a non-negative number"),
+                }
+            }
             other if other.starts_with('-') => {
                 return fail(&format!("unknown option {other}"));
             }
@@ -81,6 +137,19 @@ fn main() -> ExitCode {
         "stats" => cmd_stats(&files, grid),
         "validate" => cmd_validate(&files, grid, quiet),
         "normalize" => cmd_normalize(&files, write),
+        "render" => cmd_render(
+            &files,
+            RenderArgs {
+                out,
+                view: &view,
+                overlay: &overlay,
+                size,
+                grid,
+                grid_spacing,
+                wireframe,
+                hide_invisible,
+            },
+        ),
         other => return fail(&format!("unknown command {other:?}\n\n{USAGE}")),
     };
 
@@ -261,6 +330,140 @@ fn cmd_validate(files: &[PathBuf], grid: i64, quiet: bool) -> Result<(Value, Exi
         ExitCode::from(1)
     };
     Ok((json!({"results": out, "errors": total_errors}), code))
+}
+
+fn parse_size(s: &str) -> Option<(u32, u32)> {
+    let (w, h) = s.split_once(['x', 'X', ','])?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+}
+
+struct RenderArgs<'a> {
+    out: Option<PathBuf>,
+    view: &'a str,
+    overlay: &'a str,
+    size: (u32, u32),
+    grid: i64,
+    grid_spacing: f64,
+    wireframe: Option<bool>,
+    hide_invisible: bool,
+}
+
+fn cmd_render(files: &[PathBuf], a: RenderArgs<'_>) -> Result<(Value, ExitCode), String> {
+    use nrc_render::camera::OrthoAxis;
+    use nrc_render::{
+        contact_sheet, render, ContactSheetOptions, Overlay, RenderOptions, SceneOptions, View,
+    };
+
+    let out = a.out.ok_or("render needs --out <file.png>")?;
+    if files.len() != 1 {
+        return Err("render takes exactly one .map".into());
+    }
+    let src = read(&files[0])?;
+    let map = nrc_core::parse_map(&src)
+        .map_err(|e| format!("{}: line {}: {}", files[0].display(), e.line, e.message))?;
+
+    let overlay = match a.overlay {
+        "shaded" => Overlay::Shaded,
+        "structural" | "structural_detail" => Overlay::StructuralDetail,
+        "caulk" => Overlay::Caulk,
+        "offgrid" | "off_grid" => Overlay::OffGrid,
+        o => {
+            return Err(format!(
+                "unknown overlay {o:?}: use shaded, structural, caulk or offgrid"
+            ))
+        }
+    };
+    let scene = SceneOptions {
+        grid: a.grid,
+        ..Default::default()
+    };
+    let spacing = if a.grid_spacing > 0.0 {
+        Some(a.grid_spacing)
+    } else {
+        None
+    };
+
+    let result = if a.view == "sheet" || a.view == "contact" {
+        contact_sheet(
+            &map,
+            &ContactSheetOptions {
+                width: a.size.0,
+                height: a.size.1,
+                overlay,
+                grid_spacing: spacing,
+                scene,
+                hide_invisible: a.hide_invisible,
+                player_eye: None,
+            },
+        )
+    } else {
+        let view = match a.view {
+            "top" => View::Ortho(OrthoAxis::Top),
+            "front" => View::Ortho(OrthoAxis::Front),
+            "side" => View::Ortho(OrthoAxis::Side),
+            "perspective" | "persp" => View::Perspective {
+                eye: None,
+                target: None,
+                fov_deg: 55.0,
+            },
+            v => {
+                return Err(format!(
+                    "unknown view {v:?}: use top, front, side, perspective or sheet"
+                ))
+            }
+        };
+        render(
+            &map,
+            &RenderOptions {
+                width: a.size.0,
+                height: a.size.1,
+                view,
+                overlay,
+                wireframe: a.wireframe,
+                draw_edges: true,
+                hide_invisible: a.hide_invisible,
+                grid_spacing: spacing,
+                annotate: true,
+                scene,
+            },
+        )
+    }
+    .map_err(|e| e.to_string())?;
+
+    std::fs::write(&out, &result.png).map_err(|e| format!("{}: {e}", out.display()))?;
+
+    let ann = &result.annotations;
+    Ok((
+        json!({
+            "file": files[0].display().to_string(),
+            "png": out.display().to_string(),
+            "png_bytes": result.png.len(),
+            // The numbers §4.2 asks be surfaced come back as data, not burned into pixels.
+            "view": ann.view,
+            "overlay": ann.overlay,
+            "size": [ann.width, ann.height],
+            "bounds": match (ann.bounds_min, ann.bounds_max) {
+                (Some(a), Some(b)) => json!({"min": a, "max": b, "size": ann.size}),
+                _ => Value::Null,
+            },
+            "counts": {
+                "structural_brushes": ann.counts.structural,
+                "detail_brushes": ann.counts.detail,
+                "brush_entities": ann.counts.brush_entity,
+                "patches": ann.counts.patches,
+                "facets_drawn": ann.counts.facets,
+                "invisible_facets": ann.counts.caulk_facets,
+            },
+            "grid": ann.grid,
+            "off_grid_vertices": ann.off_grid_vertices,
+            "skipped_brushes": ann.skipped_brushes,
+            "skipped_examples": ann.skipped_examples,
+            "units_per_pixel": ann.units_per_pixel,
+            "camera_eye": ann.camera_eye,
+            "notes": ann.notes,
+        }),
+        ExitCode::SUCCESS,
+    ))
 }
 
 fn cmd_normalize(files: &[PathBuf], write: bool) -> Result<(Value, ExitCode), String> {

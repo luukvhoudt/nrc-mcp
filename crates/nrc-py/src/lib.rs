@@ -26,6 +26,21 @@ fn err(msg: impl std::fmt::Display) -> PyErr {
     PyValueError::new_err(msg.to_string())
 }
 
+fn parse_overlay(name: &str) -> PyResult<nrc_render::Overlay> {
+    use nrc_render::Overlay;
+    Ok(match name {
+        "shaded" => Overlay::Shaded,
+        "structural" | "structural_detail" => Overlay::StructuralDetail,
+        "caulk" => Overlay::Caulk,
+        "offgrid" | "off_grid" => Overlay::OffGrid,
+        other => {
+            return Err(err(format!(
+                "unknown overlay {other:?}: use shaded, structural, caulk or off_grid"
+            )))
+        }
+    })
+}
+
 /// An open `.map` document.
 #[pyclass(name = "Map", module = "nrc_py")]
 pub struct PyMap {
@@ -344,6 +359,169 @@ impl PyMap {
             }
         }
         Ok(d)
+    }
+
+    /// Render a view, returning `(png_bytes, annotations)`.
+    ///
+    /// `eye_height` is required for `view="player_eye"` and must come from the game profile
+    /// — hardcoding a standing height here would be the §7.4 seam violation the design
+    /// document explicitly warns about, and the figure it assumed was wrong for the first
+    /// target game anyway.
+    #[pyo3(signature = (
+        view = "top",
+        overlay = "shaded",
+        width = 900,
+        height = 700,
+        grid = 1,
+        grid_spacing = 64.0,
+        wireframe = None,
+        hide_invisible = false,
+        annotate = true,
+        eye = None,
+        target = None,
+        yaw_deg = 0.0,
+        eye_height = None,
+        fov_deg = 55.0,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn render<'py>(
+        &self,
+        py: Python<'py>,
+        view: &str,
+        overlay: &str,
+        width: u32,
+        height: u32,
+        grid: i64,
+        grid_spacing: f64,
+        wireframe: Option<bool>,
+        hide_invisible: bool,
+        annotate: bool,
+        eye: Option<[f64; 3]>,
+        target: Option<[f64; 3]>,
+        yaw_deg: f64,
+        eye_height: Option<f64>,
+        fov_deg: f64,
+    ) -> PyResult<(Bound<'py, pyo3::types::PyBytes>, Bound<'py, PyDict>)> {
+        use nrc_render::camera::OrthoAxis;
+        use nrc_render::{RenderOptions, SceneOptions, View};
+
+        let overlay = parse_overlay(overlay)?;
+        let scene = SceneOptions {
+            grid,
+            ..Default::default()
+        };
+        let spacing = if grid_spacing > 0.0 {
+            Some(grid_spacing)
+        } else {
+            None
+        };
+        let to_vec = |a: [f64; 3]| nrc_core::math::vec3(a[0], a[1], a[2]);
+
+        let result = if view == "sheet" || view == "contact_sheet" {
+            nrc_render::contact_sheet(
+                &self.inner,
+                &nrc_render::ContactSheetOptions {
+                    width,
+                    height,
+                    overlay,
+                    grid_spacing: spacing,
+                    scene,
+                    hide_invisible,
+                    player_eye: match (eye, eye_height) {
+                        (Some(p), Some(h)) => Some((to_vec(p), yaw_deg, h)),
+                        _ => None,
+                    },
+                },
+            )
+        } else {
+            let v = match view {
+                "top" => View::Ortho(OrthoAxis::Top),
+                "front" => View::Ortho(OrthoAxis::Front),
+                "side" => View::Ortho(OrthoAxis::Side),
+                "perspective" => View::Perspective {
+                    eye: eye.map(to_vec),
+                    target: target.map(to_vec),
+                    fov_deg,
+                },
+                "player_eye" => {
+                    let position = eye.map(to_vec).ok_or_else(|| {
+                        err("view='player_eye' needs `eye` as the floor position")
+                    })?;
+                    let eye_height = eye_height.ok_or_else(|| {
+                        err(
+                            "view='player_eye' needs `eye_height`; read it from the game \
+                             profile rather than assuming a value",
+                        )
+                    })?;
+                    View::PlayerEye {
+                        position,
+                        yaw_deg,
+                        eye_height,
+                        fov_deg,
+                    }
+                }
+                other => {
+                    return Err(err(format!(
+                        "unknown view {other:?}: use top, front, side, perspective, \
+                         player_eye or sheet"
+                    )))
+                }
+            };
+            nrc_render::render(
+                &self.inner,
+                &RenderOptions {
+                    width,
+                    height,
+                    view: v,
+                    overlay,
+                    wireframe,
+                    draw_edges: true,
+                    hide_invisible,
+                    grid_spacing: spacing,
+                    annotate,
+                    scene,
+                },
+            )
+        }
+        .map_err(err)?;
+
+        let a = &result.annotations;
+        let d = PyDict::new(py);
+        d.set_item("view", &a.view)?;
+        d.set_item("overlay", &a.overlay)?;
+        d.set_item("width", a.width)?;
+        d.set_item("height", a.height)?;
+        d.set_item("grid", a.grid)?;
+        d.set_item("off_grid_vertices", a.off_grid_vertices)?;
+        d.set_item("skipped_brushes", a.skipped_brushes)?;
+        d.set_item("skipped_examples", a.skipped_examples.clone())?;
+        d.set_item("units_per_pixel", a.units_per_pixel)?;
+        d.set_item("camera_eye", a.camera_eye)?;
+        d.set_item("camera_target", a.camera_target)?;
+        d.set_item("notes", a.notes.clone())?;
+        d.set_item("png_bytes", result.png.len())?;
+
+        let counts = PyDict::new(py);
+        counts.set_item("structural_brushes", a.counts.structural)?;
+        counts.set_item("detail_brushes", a.counts.detail)?;
+        counts.set_item("brush_entities", a.counts.brush_entity)?;
+        counts.set_item("patches", a.counts.patches)?;
+        counts.set_item("facets", a.counts.facets)?;
+        counts.set_item("invisible_facets", a.counts.caulk_facets)?;
+        d.set_item("counts", counts)?;
+
+        match (a.bounds_min, a.bounds_max) {
+            (Some(lo), Some(hi)) => {
+                let b = PyDict::new(py);
+                b.set_item("min", lo)?;
+                b.set_item("max", hi)?;
+                b.set_item("size", a.size)?;
+                d.set_item("bounds", b)?;
+            }
+            _ => d.set_item("bounds", py.None())?,
+        }
+
+        Ok((pyo3::types::PyBytes::new(py, &result.png), d))
     }
 
     #[getter]

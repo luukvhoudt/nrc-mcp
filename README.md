@@ -7,7 +7,7 @@ first.
 `nrc-mcp` owns the `.map`. It parses and writes the file losslessly, derives geometry with
 exact arithmetic, drives `q3map2`, and exposes all of it over MCP.
 
-**Status: phases 0 and 1 complete and verified; phase 2 partially done.** See
+**Status: phases 0, 1 and 2 complete and verified; phase 3 partially done.** See
 [Status](#status) for exactly what exists. The design document is
 `netradiant-mcp-spec.md`; the claims in it that did not survive verification are recorded in
 [`docs/spec-corrections.md`](docs/spec-corrections.md) — **read that before trusting a rule
@@ -47,6 +47,35 @@ with: upstream's exact float formatting (`%10.10lf`, trailing zeros stripped, so
 real literal), the leading newline every file this fork saves begins with, and trailing
 whitespace preserved verbatim — one real map ends `}\r\n\r\n\r\n` and was the last holdout.
 
+## Seeing the map
+
+§4.2 calls visual feedback non-negotiable, because "sculpting blind fails". So the renderer
+draws straight from the `.map` — no editor, no GPU, no display — and a 1454-brush map takes
+about 0.2 seconds.
+
+```sh
+mise run render corpus/real/ut4_dofa.map out/dofa.png
+nrc render map.map --view top --overlay structural --out plan.png
+```
+
+Orthographic views render as backface-culled **wireframe**, which the spec asked for and
+which turns out to matter: a *solid* top-down of a sealed map can only show the underside of
+its sky brush — one flat grey rectangle. Wireframe gives a genuine floor plan instead, with
+rooms, corridors and stairs legible through the ceiling. Perspective and player-eye views
+render solid, exactly as Radiant splits its 2D and 3D panes.
+
+Overlays colour by what matters: `structural` distinguishes structural from detail brushes,
+brush entities and patches (the §6.1 split that dominates vis cost); `caulk` highlights
+surfaces never drawn in game; `off_grid` marks vertices that miss the grid.
+
+Counts, dimensions, scale and warnings come back as **structured data** next to the image
+rather than being burned into pixels — an agent reads an exact number instead of reading its
+own render, and a human gets legible text at any size.
+
+`render_player_eye` places the camera at the player's standing height, read from the profile
+rather than hardcoded. That is not pedantry: the design document assumed 56 units and the
+shipped gamepack says 69.375.
+
 ## Design
 
 ```
@@ -85,25 +114,26 @@ profile itself, so it cannot fall behind.
 | --- | --- | --- |
 | 0 | mise bootstrap, toolchain pinned, CI | **done** |
 | 1 | `.map` parse/serialize, all three brush formats, geometry kernel | **done** — 120 kernel tests, gate green |
-| 2 | Read-only MCP tools | **partial** — tools and resources work; rendering (§4.2) not started |
+| 2 | Read-only MCP tools + rendering | **done** — 14 tools, 4 resources, and the §4.2 visual feedback loop |
 | 3 | q3map2 driver, packaging, profile validators | **partial** — compile presets and BSP JSON introspection work; `bsp_report`, packaging and profile-driven validators not started |
 | 4–10 | Sculpting, Blender, optimization, analysis, editor bridge, self-optimization | not started |
 
 Implemented: all three texdef conventions (axial, brush primitives, Valve 220), `patchDef2`
 and `patchDef3`, verbatim preservation of unknown primitives, exact brush hulls, 13 geometry
 and format validators, the differential harness, the q3map2 driver with WSL/Windows path
-translation, the seam lint, and a 95-entity verified Urban Terror profile.
+translation, the headless renderer, the seam lint, and a 95-entity verified Urban Terror
+profile.
 
 Not implemented, and the tool surface says so rather than pretending: the Solid IR and
-sculpting (§4), visual feedback (§4.2 — the spec calls this non-negotiable and it is the
-largest gap), the Blender handoff (§5), the optimization suite (§6), UrT analysis (§7.3),
+sculpting (§4), the Blender handoff (§5), the optimization suite (§6), UrT analysis (§7.3),
 the editor bridge (§9), and self-optimization (§11).
 
 ## Repository layout
 
 ```
 crates/nrc-core/     the kernel: lex, parse, write, math, exact, winding, validate, stats
-crates/nrc-cli/      `nrc` — roundtrip / stats / validate / normalize, JSON out
+crates/nrc-render/   headless rasterizer: ortho and perspective views, PNG out, no GPU
+crates/nrc-cli/      `nrc` — roundtrip / stats / validate / normalize / render, JSON out
 crates/nrc-py/       PyO3 bindings; the server's in-process kernel
 python/src/nrc_mcp/  the MCP server
 tools/               corpus import and generation, the differential harness, the q3map2

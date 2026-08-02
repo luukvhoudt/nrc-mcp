@@ -13,7 +13,8 @@ name       = "nrc_py"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-nrc-core = { workspace = true }
+nrc-core   = { workspace = true }
+nrc-render = { workspace = true }
 # `extension-module` keeps libpython out of the link line, so the .so builds without
 # python-dev present. `abi3-py312` means one artefact works on 3.12 and every later 3.x,
 # which matters because the toolchain is pinned but a user's interpreter may not be.

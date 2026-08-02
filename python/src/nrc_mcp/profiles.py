@@ -88,6 +88,29 @@ def movement(profile_id: str) -> dict[str, Any]:
     return out
 
 
+def standing_height(profile_id: str) -> float | None:
+    """The player's standing height in world units, if the profile states it.
+
+    This is what a player-eye render is placed at. It must come from here rather than from a
+    constant in code: §7.4 names hardcoded physics constants as the most likely seam leak, and
+    the design document's own assumed figure was wrong for the first target game by 13 units
+    (`docs/spec-corrections.md`).
+
+    Only a `verified` entry is used. An unverified height would put the camera somewhere the
+    player cannot actually stand, which is worse than declining to guess.
+    """
+    mv = movement(profile_id).get("movement")
+    if not isinstance(mv, dict):
+        return None
+    for key in ("eye_height", "headroom_stand"):
+        entry = mv.get(key)
+        if isinstance(entry, dict) and entry.get("confidence") == "verified":
+            v = entry.get("value")
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                return float(v)
+    return None
+
+
 def summary(profile_id: str) -> dict[str, Any]:
     """A compact overview, for the profile MCP resource."""
     data = load(profile_id)

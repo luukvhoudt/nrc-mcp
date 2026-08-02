@@ -243,6 +243,12 @@ run         = "uv run python tools/import_corpus.py"
 # mcp:* — the server itself
 # ---------------------------------------------------------------------------
 
+[tasks."render"]
+description = "Render a map view to a PNG (§4.2 visual feedback)"
+depends     = ["kernel:build"]
+usage       = 'arg "<map>" help="path to .map"\narg "<out>" help="output .png"'
+run         = "./target/release/nrc render {{arg(name='map')}} --out {{arg(name='out')}} --view sheet --hide-invisible"
+
 [tasks."mcp:serve"]
 description = "Run the nrc-mcp server on stdio"
 depends     = ["kernel:build"]

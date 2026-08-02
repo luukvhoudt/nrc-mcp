@@ -177,6 +177,48 @@ def test_tools_refuse_to_run_without_an_open_map():
         server.SESSION.require()
 
 
+def test_tool_names_match_the_decorated_tools():
+    """The listed inventory must not drift from what is actually registered."""
+    import re
+    from pathlib import Path as _P
+
+    from nrc_mcp import server
+
+    src = _P(server.__file__).read_text()
+    decorated = re.findall(r"@mcp\.tool\(\)\s*\ndef (\w+)", src)
+    assert sorted(decorated) == sorted(server.TOOL_NAMES), (
+        f"registered {sorted(decorated)} but TOOL_NAMES lists {sorted(server.TOOL_NAMES)}"
+    )
+    for name in server.TOOL_NAMES:
+        fn = getattr(server, name, None)
+        assert fn is not None, f"{name} is listed but not defined"
+        assert (fn.__doc__ or "").strip(), f"{name} has no docstring for the agent to read"
+
+
+def test_render_tools_appear_in_the_surface():
+    from nrc_mcp import server
+
+    text = server.describe_surface()
+    for tool in ("render_topdown", "render_camera", "render_contact_sheet", "render_player_eye"):
+        assert tool in text
+    # Rendering is implemented now, so it must not still be listed as missing.
+    assert "4.2 rendering" not in text
+
+
+def test_player_eye_height_comes_from_the_profile():
+    """§7.4: a physics constant must be read from data, never hardcoded in the server."""
+    from nrc_mcp import profiles as p
+
+    av = p.available()
+    if not av:
+        pytest.skip("no profiles on disk")
+    h = p.standing_height(av[0])
+    assert h is not None, "the profile should state a verified standing height"
+    assert 32.0 < h < 128.0, f"implausible standing height {h}"
+    # And it must not be the figure the design document assumed.
+    assert abs(h - 56.0) > 1e-9, "56 is the legacy Quake 3 height, not this game's"
+
+
 def test_resource_uris_are_game_agnostic():
     """A per-game URI scheme in code would itself be a §7.4 seam violation."""
     from nrc_mcp import server

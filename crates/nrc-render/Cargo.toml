@@ -1,0 +1,18 @@
+[package]
+name         = "nrc-render"
+description   = "Headless rasterizer for .map visual feedback"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+rust-version.workspace = true
+
+[dependencies]
+nrc-core = { workspace = true }
+# Deflate only. The PNG container is written here (roughly 60 lines) rather than pulled in,
+# so the whole image path is one small dependency deep.
+#
+# The kernel's no-dependency rule is deliberately scoped to the kernel: a bug in a
+# compressor produces an unreadable image, which is obvious and harmless. A bug reaching the
+# geometry predicates corrupts someone's map silently, which is not.
+miniz_oxide = "0.9"
