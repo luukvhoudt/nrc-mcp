@@ -727,6 +727,38 @@ fn node_from_dict(d: &Bound<'_, PyDict>, depth: usize) -> PyResult<Node> {
             segments: usize_from(d, "segments", &op)?,
             axis: axis_from(d, "axis", "z")?,
         },
+        "planes" => {
+            let raw: Vec<Vec<f64>> = get(d, "planes", &op)?
+                .extract()
+                .map_err(|_| err("planes must be a list of [nx, ny, nz, d] lists"))?;
+            let mut out = Vec::with_capacity(raw.len());
+            for (i, pl) in raw.iter().enumerate() {
+                if pl.len() != 4 {
+                    return Err(err(format!(
+                        "plane {i} needs exactly four numbers [nx, ny, nz, d], got {}",
+                        pl.len()
+                    )));
+                }
+                for c in pl {
+                    if !c.is_finite() || c.fract() != 0.0 {
+                        return Err(err(format!(
+                            "plane {i} has a non-integer coefficient ({c}); half-spaces must be \
+                             integral so the geometry stays exact"
+                        )));
+                    }
+                }
+                if pl[0] == 0.0 && pl[1] == 0.0 && pl[2] == 0.0 {
+                    return Err(err(format!("plane {i} has a zero normal")));
+                }
+                out.push(nrc_core::exact::IPlane {
+                    nx: pl[0] as i128,
+                    ny: pl[1] as i128,
+                    nz: pl[2] as i128,
+                    d: pl[3] as i128,
+                });
+            }
+            Node::Planes(out)
+        }
         "union" => Node::Union(children(d, "parts", &op, depth)?),
         "intersect" => Node::Intersect(children(d, "parts", &op, depth)?),
         "subtract" => Node::Subtract {
@@ -768,8 +800,8 @@ fn node_from_dict(d: &Bound<'_, PyDict>, depth: usize) -> PyResult<Node> {
         other => {
             return Err(err(format!(
                 "unknown operator {other:?}. Available: box, wedge, prism, cone, pyramid, \
-                 stair, pipe, arch, union, intersect, subtract, hollow, carve_opening, \
-                 translate, mirror, array"
+                 stair, pipe, arch, planes, union, intersect, subtract, hollow, \
+                 carve_opening, translate, mirror, array"
             )))
         }
     })

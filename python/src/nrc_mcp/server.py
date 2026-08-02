@@ -41,6 +41,7 @@ except ImportError:  # pragma: no cover - older SDKs
     from mcp.server.fastmcp import FastMCP as _Server
     from mcp.server.fastmcp import Image as _Image
 
+from . import blender as blendermod
 from . import bsp as bspmod
 from . import pack as packmod
 from . import profiles, rules, solids, tasks
@@ -774,6 +775,224 @@ def solid_edit_param(
 
 
 # ---------------------------------------------------------------------------
+# Assets — the Blender handoff (§5)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def asset_plan(
+    blocks_movement: bool,
+    blocks_visibility: bool,
+    is_axis_aligned: bool,
+    is_curved: bool,
+    needs_clean_collision: bool = False,
+    is_organic: bool = False,
+) -> dict:
+    """Decide whether a feature should be a brush, a patch or a mesh (§4.3, §5.5).
+
+    The decision rule, in order: *does it block movement, block vis, or need cheap clean
+    collision?* → brush. *Is it axis-aligned architecture?* → brush. *Is it curved but simple?*
+    → patch. *Everything else* → Blender.
+
+    That ordering is not arbitrary. Brushes are the only representation that seals a map and
+    blocks visibility, patches are never structural, and meshes are always non-structural — so
+    anything load-bearing has to be a brush regardless of how it looks.
+    """
+    if blocks_visibility:
+        return _tier(
+            1,
+            "brush, structural, caulked",
+            "it blocks visibility, and only a structural brush can do that",
+            grid=16,
+        )
+    if blocks_movement or needs_clean_collision:
+        return _tier(
+            2,
+            "brush, detail",
+            "it blocks movement or needs cheap predictable collision, which a brush "
+            "gives and a mesh does not",
+            grid=8,
+        )
+    if is_axis_aligned and not is_curved:
+        return _tier(
+            2, "brush, detail", "axis-aligned architecture is cheaper and tidier as a brush", grid=8
+        )
+    if is_curved and not is_organic:
+        return _tier(3, "patch", "curved but simple, so a patch — and a patch is never structural")
+    return _tier(
+        4,
+        "mesh via misc_model",
+        "ornament, clutter or organic geometry, which is what Blender is for; always "
+        "non-structural, so pair it with an explicit collision decision",
+    )
+
+
+def _tier(tier: int, representation: str, why: str, grid: int | None = None) -> dict:
+    out = {
+        "tier": tier,
+        "representation": representation,
+        "why": why,
+        "next": {
+            1: "author it with solid_commit; texture hidden faces with the caulk shader",
+            2: "author it with solid_commit and set detail=true in textures",
+            3: "patches are not yet authorable by this tool — build it in the editor for now",
+            4: "call blender_brief, send the prompt to Blender, then model_import",
+        }[tier],
+    }
+    if grid:
+        out["minimum_grid"] = grid
+    return out
+
+
+@mcp.tool()
+def blender_brief(
+    asset_id: str,
+    purpose: str,
+    bounds: dict,
+    collision: str = "brush_hull",
+    materials: list[dict] | None = None,
+    triangles: int | None = None,
+    silhouette_notes: str = "",
+    profile_id: str | None = None,
+) -> dict:
+    """Emit a numerically complete asset brief plus a ready-to-send Blender prompt (§5.2).
+
+    `bounds` is `{"x": [lo, hi], "y": [...], "z": [...]}` in world units — normally the brush
+    volume the asset replaces.
+
+    The point is that the returned `prompt` leaves nothing to infer: dimensions, origin, budget,
+    material names, UV density, export axes and the collision decision are all decided here. A
+    brief that says "make it crate-sized" gets a crate of the wrong size.
+
+    The unit scale comes from the profile, not from this code — §7.4 names that constant
+    specifically as a place game specifics leak in.
+    """
+    pid = profile_id or active_profile()
+    if not pid:
+        return {"error": "no profile selected", "available": profiles.available()}
+    try:
+        return blendermod.blender_brief(
+            pid,
+            asset_id,
+            purpose,
+            bounds,
+            collision=collision,
+            materials=materials,
+            triangles=triangles,
+            silhouette_notes=silhouette_notes,
+        )
+    except (blendermod.AssetError, profiles.ProfileError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def model_import(path: str, brief: dict, profile_id: str | None = None) -> dict:
+    """Validate an exported mesh against the brief that asked for it (§5.3).
+
+    Checks scale, fit, origin, triangle budget, material names, UVs and structure. The scale
+    check comes first and names the likely cause: a mesh 1/39.37 of the requested size is the
+    metres-exported-as-units mistake, and saying so is far more useful than reporting the raw
+    numbers.
+    """
+    p = Path(path)
+    if not p.is_absolute():
+        p = repo_root() / p
+    try:
+        return blendermod.model_import(p, brief, profile_id or active_profile() or None)
+    except blendermod.AssetError as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def model_place(
+    model_path: str,
+    origin: list[float],
+    angles: list[float] | None = None,
+    scale: float | None = None,
+    lightmap_scale: float | None = None,
+    remap: dict | None = None,
+    profile_id: str | None = None,
+    commit: bool = False,
+) -> dict:
+    """Build the entity that places a model in the world (§5.3).
+
+    Defaults to returning the key/value pairs without touching the map, so the placement can be
+    checked first. Pass `commit=True` to add the entity to the open map.
+
+    Every key name comes from the profile: the model entity's classname, the scale keys, the
+    remap prefix. Negative scale is supported by this compiler and is the cheapest way to mirror
+    a prop.
+    """
+    pid = profile_id or active_profile()
+    if not pid:
+        return {"error": "no profile selected", "available": profiles.available()}
+    try:
+        keys = blendermod.model_place_keys(
+            pid,
+            model_path,
+            origin,
+            angles=angles,
+            scale=scale,
+            lightmap_scale=lightmap_scale,
+            remap=remap,
+        )
+    except (blendermod.AssetError, profiles.ProfileError) as e:
+        return {"error": str(e)}
+
+    out = {"keys": keys, "committed": False}
+    if commit:
+        m = SESSION.require()
+        src = m.source()
+        entity = "{\n" + "".join(f'"{k}" "{v}"\n' for k, v in keys) + "}\n"
+        k = _kernel()
+        merged = k.Map.parse(src + entity)
+        SESSION.map = merged
+        out["committed"] = True
+        out["entities_now"] = merged.entity_count
+        out["next"] = "call map_save to write it, and model_make_clip if it needs collision"
+    return out
+
+
+@mcp.tool()
+def model_make_clip(
+    path: str,
+    origin: list[float] | None = None,
+    scale: float = 1.0,
+    k: int = 14,
+    grid: int = 1,
+    kind: str = "player",
+    profile_id: str | None = None,
+) -> dict:
+    """Fit a convex collision hull to a mesh, returned as Solid IR (§5.4).
+
+    The hull is a k-DOP: the tightest intersection of half-spaces with `k` fixed normals that
+    contains every vertex, pushed outward to the grid so it never cuts into the visual. That is a
+    deliberate choice, not a shortcut — §5.4 argues that for a competitive shooter snappy,
+    predictable collision beats accurate collision, and a 14-plane hull is something a player can
+    read while sliding along it.
+
+    `kind` selects the clip shader from the profile: `player` for movement only, `weapon` to stop
+    bullets where the visual has gaps, `both` for solid.
+
+    Returns IR rather than brushes, so preview it with `solid_preview` and look at it against the
+    model before committing. A hull noticeably larger than the visual is what players report as
+    an invisible wall.
+    """
+    pid = profile_id or active_profile()
+    if not pid:
+        return {"error": "no profile selected", "available": profiles.available()}
+    p = Path(path)
+    if not p.is_absolute():
+        p = repo_root() / p
+    try:
+        return blendermod.model_make_clip(
+            p, pid, origin=origin, scale=scale, k=k, grid=grid, kind=kind
+        )
+    except (blendermod.AssetError, profiles.ProfileError) as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
 # Project / meta
 # ---------------------------------------------------------------------------
 
@@ -946,6 +1165,11 @@ TOOL_NAMES = (
     "solid_inspect",
     "solid_list",
     "solid_edit_param",
+    "asset_plan",
+    "blender_brief",
+    "model_import",
+    "model_place",
+    "model_make_clip",
     "task_list",
     "task_run",
     "compile_map",
@@ -971,8 +1195,8 @@ def describe_surface() -> str:
         f"active profile: {active_profile() or '(none)'}",
         f"profiles available: {', '.join(profiles.available()) or 'none'}",
         "",
-        "NOT YET IMPLEMENTED (spec sections): §5 Blender handoff, §6 optimization suite,",
-        "§7.3 UrT analysis, §9 editor bridge, §11 self-optimization.",
+        "NOT YET IMPLEMENTED (spec sections): §6 optimization suite, §7.3 UrT analysis,",
+        "§9 editor bridge, §11 self-optimization.",
     ]
     try:
         lines.append(f"mise tasks discovered: {len(tasks.list_tasks())}")

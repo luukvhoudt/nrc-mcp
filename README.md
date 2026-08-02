@@ -7,7 +7,7 @@ first.
 `nrc-mcp` owns the `.map`. It parses and writes the file losslessly, derives geometry with
 exact arithmetic, drives `q3map2`, and exposes all of it over MCP.
 
-**Status: phases 0–4 complete and verified.** See
+**Status: phases 0–5 complete and verified.** See
 [Status](#status) for exactly what exists. The design document is
 `netradiant-mcp-spec.md`; the claims in it that did not survive verification are recorded in
 [`docs/spec-corrections.md`](docs/spec-corrections.md) — **read that before trusting a rule
@@ -153,7 +153,8 @@ profile itself, so it cannot fall behind.
 | 2 | Read-only MCP tools + rendering | **done** — 14 tools, 4 resources, and the §4.2 visual feedback loop |
 | 3 | q3map2 driver, `bsp_report`, packaging, profile validators | **done** — declarative rule engine, BSP introspection, `ship_check` |
 | 4 | Solid IR, sculpting tools, convex decomposition | **done** — a doorway compiles to exactly three brushes |
-| 5–10 | Blender, optimization, analysis, editor bridge, self-optimization | not started |
+| 5 | Blender handoff: brief, import validation, collision hull | **done** — the metres/inches error is named, not just measured |
+| 6–10 | Optimization, analysis, editor bridge, self-optimization | in progress |
 
 Implemented: all three texdef conventions (axial, brush primitives, Valve 220), `patchDef2`
 and `patchDef3`, verbatim preservation of unknown primitives, exact brush hulls, 13 geometry

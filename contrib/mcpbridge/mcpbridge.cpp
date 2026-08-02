@@ -279,12 +279,12 @@ struct Call
 	}
 
 	/// \brief Builds the index and checks the caller's optional "revision" pin.
-	bool index( SceneIndex& index ){
-		if ( !index.build() ) {
+	bool index( SceneIndex& out ){
+		if ( !out.build() ) {
 			return fail( e_noMap, "no map is open" );
 		}
 		const json::Value& pinned = params["revision"];
-		if ( pinned.isNumber() && std::size_t( pinned.number() ) != index.m_revision ) {
+		if ( pinned.isNumber() && std::size_t( pinned.number() ) != out.m_revision ) {
 			return fail( e_staleRevision, "scene revision has moved; re-query ids" );
 		}
 		return true;

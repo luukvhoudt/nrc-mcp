@@ -2854,3 +2854,50 @@ packaging:
   size_budget_bytes: 52428800
   size_budget_confidence: unverified
   size_budget_note: "50 MiB is a community norm for download comfort, not a hard limit"
+
+# ---------------------------------------------------------------------------
+# assets — the Blender handoff's game-specific numbers (§5)
+# ---------------------------------------------------------------------------
+#
+# §7.4 names "`1 quake unit ≈ 1 inch` baked into the Blender brief generator" as one of the
+# five places game specifics leak into code, so the unit scale lives here rather than there.
+# So do the model entity's key names and the clip shader names.
+
+assets:
+  confidence: verified
+  source: gamepack_gamefile
+  # The entity that places a mesh in the world, and the keys it reads. Standard Quake 3, and
+  # present in this gamepack's entity list.
+  model_entity: misc_model
+  model_key: model
+  angles_key: angles
+  scale_key: modelscale
+  scale_vec_key: modelscale_vec
+  lightmap_scale_key: _lightmapScale
+  remap_key_prefix: _remap
+  # Shaders that collide but are never drawn. Engine-level names shared by every idTech game
+  # using this compiler, but kept here because a mod may rename them.
+  clip_shaders:
+    player: common/playerclip
+    weapon: common/weapclip
+    both: common/clip
+    nodraw: common/nodraw
+  units:
+    # 1 Quake unit is 1 inch, so a metre is 39.37 units. Stated by the level-design
+    # documentation and consistent with the verified player height of 69.375 units (5'9").
+    units_per_metre: 39.37
+    up_axis: z
+    forward_axis: x
+    confidence: verified
+    source: "derived from the verified 69.375-unit player height; 1 unit = 1 inch"
+  export:
+    # Assimp reads far more, but these three are what a Blender export should use: OBJ for
+    # static props, ASE for anything needing per-face shaders, MD3 for animation.
+    preferred_formats: [obj, ase, md3]
+    default_format: obj
+  budgets:
+    # Community norms rather than engine limits, so advisory only.
+    prop_triangles: 900
+    prop_materials: 2
+    confidence: unverified
+    note: "sensible defaults for a cover-sized prop, not a measured limit"

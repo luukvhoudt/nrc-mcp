@@ -67,43 +67,21 @@ class Value
 	friend class Reader;
 
 public:
-	Type type() const {
-		return m_type;
-	}
-	bool isNull() const {
-		return m_type == Type::Null;
-	}
-	bool isBoolean() const {
-		return m_type == Type::Boolean;
-	}
-	bool isNumber() const {
-		return m_type == Type::Number;
-	}
-	bool isString() const {
-		return m_type == Type::String;
-	}
-	bool isArray() const {
-		return m_type == Type::Array;
-	}
-	bool isObject() const {
-		return m_type == Type::Object;
-	}
+	Type type() const { return m_type; }
+	bool isNull() const { return m_type == Type::Null; }
+	bool isBoolean() const { return m_type == Type::Boolean; }
+	bool isNumber() const { return m_type == Type::Number; }
+	bool isString() const { return m_type == Type::String; }
+	bool isArray() const { return m_type == Type::Array; }
+	bool isObject() const { return m_type == Type::Object; }
 
-	bool boolean( bool fallback = false ) const {
-		return m_type == Type::Boolean ? m_boolean : fallback;
-	}
-	double number( double fallback = 0 ) const {
-		return m_type == Type::Number ? m_number : fallback;
-	}
+	bool boolean( bool fallback = false ) const { return m_type == Type::Boolean ? m_boolean : fallback; }
+	double number( double fallback = 0 ) const { return m_type == Type::Number ? m_number : fallback; }
 	/// \brief Returns the string, or \p fallback for any other type. Never null.
-	const char* string( const char* fallback = "" ) const {
-		return m_type == Type::String ? m_string.c_str() : fallback;
-	}
+	const char* string( const char* fallback = "" ) const { return m_type == Type::String ? m_string.c_str() : fallback; }
 
 	/// \brief Number of array elements or object members; 0 for scalars.
-	std::size_t size() const {
-		return m_values.size();
-	}
+	std::size_t size() const { return m_values.size(); }
 	/// \brief Array element, or object member value, by position.
 	/// Deliberately not an operator[] overload: a literal 0 is both an integer
 	/// and a null pointer constant, so index-or-name overloading is ambiguous.
@@ -111,12 +89,8 @@ public:
 	/// \brief Object member by name. Missing members read as null.
 	const Value& operator[]( const char* key ) const;
 	/// \brief Name of the object member at \p index, or "" if there is none.
-	const char* key( std::size_t index ) const {
-		return index < m_keys.size() ? m_keys[index].c_str() : "";
-	}
-	bool has( const char* key ) const {
-		return !( *this )[key].isNull();
-	}
+	const char* key( std::size_t index ) const { return index < m_keys.size() ? m_keys[index].c_str() : ""; }
+	bool has( const char* key ) const { return !( *this )[key].isNull(); }
 
 	/// \brief Reads \p count numbers from an array value into \p out.
 	/// \return false unless the value is an array of exactly \p count numbers.
@@ -434,12 +408,8 @@ class Writer
 	}
 
 public:
-	const std::string& str() const {
-		return m_out;
-	}
-	bool empty() const {
-		return m_out.empty();
-	}
+	const std::string& str() const { return m_out; }
+	bool empty() const { return m_out.empty(); }
 
 	Writer& beginObject(){
 		open( '{' );

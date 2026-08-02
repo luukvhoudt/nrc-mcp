@@ -68,6 +68,13 @@ pub enum Node {
         sides: usize,
         start_deg: f64,
     },
+    /// An explicit set of half-spaces.
+    ///
+    /// The escape hatch, and still safe by construction: an intersection of half-spaces is
+    /// convex whatever the planes are. It exists because a collision hull fitted to a mesh is
+    /// naturally a set of planes with chosen normals (a k-DOP), and forcing that through the
+    /// parametric primitives would lose the point.
+    Planes(Vec<nrc_core::exact::IPlane>),
     Arch {
         centre: IVec3,
         outer_radius: i64,
@@ -123,6 +130,7 @@ impl Node {
             Node::Pyramid { .. } => "pyramid",
             Node::Stair { .. } => "stair",
             Node::Pipe { .. } => "pipe",
+            Node::Planes(_) => "planes",
             Node::Arch { .. } => "arch",
             Node::Union(_) => "union",
             Node::Intersect(_) => "intersect",
@@ -240,6 +248,18 @@ fn eval(node: &Node, path: String, warnings: &mut Vec<String>) -> Result<Solid, 
             start_deg,
         } => prim::cone(*min, *max, *axis, *sides, *start_deg),
         Node::Pyramid { min, max, axis } => prim::pyramid(*min, *max, *axis),
+        Node::Planes(planes) => {
+            if planes.len() < 4 {
+                Err(format!(
+                    "a shape needs at least 4 half-spaces to enclose a volume, got {}",
+                    planes.len()
+                ))
+            } else {
+                Ok(crate::poly::Solid::single(
+                    crate::poly::Polytope::from_planes(planes.iter().copied()),
+                ))
+            }
+        }
         Node::Stair {
             origin,
             width,
