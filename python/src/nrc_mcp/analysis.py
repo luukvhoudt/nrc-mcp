@@ -455,6 +455,20 @@ def roles(profile_id: str) -> Roles:
             objectives.add(classname)
 
     team_key, group_key = _role_keys(data)
+    if not team_key:
+        # No rule names it. Fall back to the spawn classes' own key definitions: a key that
+        # declares a closed set of values on a spawn entity is the one that names sides.
+        for entity in entities:
+            if SPAWN_ROLE not in str(entity.get("category", "")):
+                continue
+            for key in entity.get("keys") or []:
+                values = key.get("values") if isinstance(key, dict) else None
+                if isinstance(values, list) and len(values) >= 2:
+                    team_key = str(key.get("name"))
+                    break
+            if team_key:
+                break
+
     return Roles(
         profile=profile_id,
         spawns=frozenset(spawns),

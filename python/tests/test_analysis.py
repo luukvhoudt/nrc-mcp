@@ -189,6 +189,31 @@ def test_roles_are_discovered_from_profile_data(role_map):
     assert role_map.team_of("nothing", {}) == analysis.UNASSIGNED_TEAM
 
 
+def test_roles_fall_back_to_key_definitions_when_no_rule_names_the_team_key(monkeypatch):
+    """A profile need not ship rules for the balance report to know which key names a side."""
+    profile = {
+        "entities": [
+            {
+                "classname": "a_spawn_point",
+                "category": "spawn_side",
+                "keys": [
+                    {"name": "direction"},
+                    {"name": "side", "values": ["left", "right"]},
+                ],
+            },
+            {"classname": "a_goal", "category": "objective"},
+        ]
+    }
+    monkeypatch.setattr(profiles, "load", lambda _pid: profile)
+    monkeypatch.setattr(profiles, "entities", lambda _pid: profile["entities"])
+    discovered = analysis.roles("test")
+    assert discovered.spawns == {"a_spawn_point"}
+    assert discovered.objectives == {"a_goal"}
+    assert discovered.team_key == "side"
+    assert discovered.team_labels == ("left", "right")
+    assert discovered.group_key == "", "nothing names a group key, and that is not an error"
+
+
 def test_unverified_reasoning_can_never_be_worse_than_info():
     assert analysis._clamp("error", "verified") == "error"
     assert analysis._clamp("error", "unverified") == "info"

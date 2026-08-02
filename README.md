@@ -185,6 +185,27 @@ corpus/              real, upstream-regression and synthetic test maps
 docs/                spec corrections and notes
 ```
 
+## What is deliberately not built
+
+Three things are absent on purpose rather than by omission, and knowing which is which saves time:
+
+**Kernel self-modification.** §11.4 gates the exact geometric predicates and anything that writes
+user `.map` files behind human review *indefinitely*, and §13 calls automating it the
+highest-risk item in the design. `selfdev` therefore restricts itself to the prompt and resource
+layer (§11.3), where the return per unit of risk is highest and a mistake cannot corrupt a map.
+Widening that list is an edit to a protected file.
+
+**Patch authoring.** Patches are parsed, validated, tessellated and rendered, but the Solid IR
+cannot create one. Tier-3 geometry has to be built in the editor.
+
+**The dimension corpus.** §4.3 asks for measured width/height/length distributions per space
+category, extracted from released maps. Without it there is no `reference_dimensions`, and sizing
+comes from the profile's verified constants instead.
+
+And one thing is absent because it cannot be done from here: the editor bridge **has never been
+compiled**. There is no Qt5 environment on this machine and the host compiler cannot build the
+codebase at all. `docs/pr-plan.md` reports that as unmet rather than glossing it.
+
 ## Notes for contributors
 
 - `mise run test` must be green before anything else is believed. If `test:diff` fails, fix
@@ -195,6 +216,11 @@ docs/                spec corrections and notes
 - Rules carry a `confidence`. Only `verified` rules may fail a build. Three of the spec's
   supposedly-verified Urban Terror spawn rules were wrong, and one would have failed correct
   maps — that mechanism is why it did not ship.
+- Nothing in `python/src` parses `.map` text. Twice a module reached for a second parser because
+  an accessor was missing; both times the right fix was to add the accessor to the kernel
+  (`brush_geometry`'s `detail`/`face_contents`, and `Map.patches()`).
+- `mise run selfdev:protected` verifies the hash pins on the paths that define what *correct*
+  means. If it fails, treat every fitness score as meaningless until you know why.
 
 ## Licence
 
