@@ -1,0 +1,7 @@
+; mcpbridge.def : Declares the module parameters for the DLL.
+
+LIBRARY      "MCPBRIDGE"
+
+EXPORTS
+    ; Explicit exports can go here
+	Radiant_RegisterModules @1

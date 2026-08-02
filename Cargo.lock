@@ -60,6 +60,7 @@ version = "0.1.0"
 dependencies = [
  "nrc-core",
  "nrc-render",
+ "nrc-solid",
  "pyo3",
 ]
 
@@ -68,6 +69,13 @@ name = "nrc-render"
 version = "0.1.0"
 dependencies = [
  "miniz_oxide",
+ "nrc-core",
+]
+
+[[package]]
+name = "nrc-solid"
+version = "0.1.0"
+dependencies = [
  "nrc-core",
 ]
 

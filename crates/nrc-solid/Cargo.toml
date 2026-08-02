@@ -1,0 +1,13 @@
+[package]
+name         = "nrc-solid"
+description   = "Solid IR: CSG and parametric solids that compile to valid brushes"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+repository.workspace   = true
+rust-version.workspace = true
+
+[dependencies]
+nrc-core = { workspace = true }
+# Dependency-free, like the kernel. This decides whether someone's geometry is valid, so a
+# convex decomposition arriving via a transitive update is not a risk worth taking.

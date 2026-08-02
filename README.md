@@ -7,7 +7,7 @@ first.
 `nrc-mcp` owns the `.map`. It parses and writes the file losslessly, derives geometry with
 exact arithmetic, drives `q3map2`, and exposes all of it over MCP.
 
-**Status: phases 0, 1 and 2 complete and verified; phase 3 partially done.** See
+**Status: phases 0–4 complete and verified.** See
 [Status](#status) for exactly what exists. The design document is
 `netradiant-mcp-spec.md`; the claims in it that did not survive verification are recorded in
 [`docs/spec-corrections.md`](docs/spec-corrections.md) — **read that before trusting a rule
@@ -76,6 +76,42 @@ own render, and a human gets legible text at any size.
 rather than hardcoded. That is not pedantry: the design document assumed 56 units and the
 shipped gamepack says 69.375.
 
+## Sculpting
+
+§4 asks for a representation in which **invalid geometry is not expressible**. The Solid IR
+delivers that literally: every shape is an intersection of half-spaces, so it cannot be
+non-convex, and every failure is "this shape is wrong" with the path to the node that caused
+it — never "this file is corrupt".
+
+```json
+{"op": "subtract",
+ "from": {"op": "hollow", "solid": {"op": "box", "min": [0,0,0], "max": [512,512,256]},
+          "thickness": 16},
+ "cut": [{"op": "box", "min": [224,-8,0], "max": [288,24,112]}]}
+```
+
+`subtract` is what §4.1 calls the core engineering risk, and it warns that "a naive
+decomposition that emits 200 brushes for a doorway is worse than useless". Subtracting `B` from
+`A` uses the identity `A \ B = ⋃ᵢ (A ∩ h₁ ∩ … ∩ hᵢ₋₁ ∩ ¬hᵢ)` over `B`'s half-spaces: every term
+is convex by construction, and the terms that would be slivers are *exactly* empty and vanish.
+A doorway through a wall therefore comes out as **three brushes** — left column, right column,
+lintel — which is what a mapper would draw by hand.
+
+Adjacent pieces are then merged where their union is genuinely convex, using an exact test
+rather than a volume comparison: for `P` and `Q` sharing plane `h`, the union is convex iff
+every other plane of `P` contains all of `Q` and vice versa. That has to be exact, because
+merging wrongly would fill the doorway back in.
+
+The IR is recorded in a `<map>.solids.json` sidecar, so `solid_edit_param("corridor",
+"solid.max[1]", 160)` widens a corridor as one field change. The `.map` stays canonical; the
+sidecar is advisory and re-derivable.
+
+One caveat the spec's "on-grid" wording does not capture: plane-defining points are always
+integers, and for every primitive the *vertices* are integers too (a prism's corners are the
+ring points it was built from). But an octagon of radius 64 has corners at ±59, which are not
+multiples of 8 — and CSG between two off-axis shapes can produce genuinely rational vertices.
+Both are counted and reported rather than hidden.
+
 ## Design
 
 ```
@@ -115,8 +151,9 @@ profile itself, so it cannot fall behind.
 | 0 | mise bootstrap, toolchain pinned, CI | **done** |
 | 1 | `.map` parse/serialize, all three brush formats, geometry kernel | **done** — 120 kernel tests, gate green |
 | 2 | Read-only MCP tools + rendering | **done** — 14 tools, 4 resources, and the §4.2 visual feedback loop |
-| 3 | q3map2 driver, packaging, profile validators | **partial** — compile presets and BSP JSON introspection work; `bsp_report`, packaging and profile-driven validators not started |
-| 4–10 | Sculpting, Blender, optimization, analysis, editor bridge, self-optimization | not started |
+| 3 | q3map2 driver, `bsp_report`, packaging, profile validators | **done** — declarative rule engine, BSP introspection, `ship_check` |
+| 4 | Solid IR, sculpting tools, convex decomposition | **done** — a doorway compiles to exactly three brushes |
+| 5–10 | Blender, optimization, analysis, editor bridge, self-optimization | not started |
 
 Implemented: all three texdef conventions (axial, brush primitives, Valve 220), `patchDef2`
 and `patchDef3`, verbatim preservation of unknown primitives, exact brush hulls, 13 geometry

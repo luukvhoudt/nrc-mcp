@@ -558,5 +558,388 @@ fn round_trip_check<'py>(py: Python<'py>, source: &str) -> PyResult<Bound<'py, P
 fn nrc_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMap>()?;
     m.add_function(wrap_pyfunction!(round_trip_check, m)?)?;
+    m.add_function(wrap_pyfunction!(solid_compile, m)?)?;
+    m.add_function(wrap_pyfunction!(solid_commit, m)?)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Solid IR (§4)
+// ---------------------------------------------------------------------------
+
+use nrc_solid::ir::Node;
+use nrc_solid::prim::Axis as SolidAxis;
+
+fn ivec_from(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<nrc_core::exact::IVec3> {
+    let v: Vec<f64> = obj
+        .extract()
+        .map_err(|_| err(format!("{what} must be a list of three numbers")))?;
+    if v.len() != 3 {
+        return Err(err(format!("{what} must have exactly three components")));
+    }
+    for c in &v {
+        if !c.is_finite() || c.fract() != 0.0 {
+            return Err(err(format!(
+                "{what} must be whole numbers — the Solid IR works on the integer grid, and \
+                 {c} is not on it"
+            )));
+        }
+    }
+    Ok(nrc_core::exact::ivec3(
+        v[0] as i64,
+        v[1] as i64,
+        v[2] as i64,
+    ))
+}
+
+fn axis_from(d: &Bound<'_, PyDict>, key: &str, default: &str) -> PyResult<SolidAxis> {
+    let raw: String = match d.get_item(key)? {
+        Some(v) => v
+            .extract()
+            .map_err(|_| err(format!("{key} must be a string")))?,
+        None => default.to_string(),
+    };
+    SolidAxis::parse(&raw).ok_or_else(|| err(format!("{key} must be x, y or z — got {raw:?}")))
+}
+
+fn get<'py>(d: &Bound<'py, PyDict>, key: &str, op: &str) -> PyResult<Bound<'py, PyAny>> {
+    d.get_item(key)?
+        .ok_or_else(|| err(format!("a {op:?} node needs a {key:?} field")))
+}
+
+fn i64_from(d: &Bound<'_, PyDict>, key: &str, op: &str) -> PyResult<i64> {
+    get(d, key, op)?
+        .extract()
+        .map_err(|_| err(format!("{key} must be a whole number in a {op:?} node")))
+}
+
+fn usize_from(d: &Bound<'_, PyDict>, key: &str, op: &str) -> PyResult<usize> {
+    let v = i64_from(d, key, op)?;
+    usize::try_from(v).map_err(|_| err(format!("{key} must not be negative, got {v}")))
+}
+
+fn f64_or(d: &Bound<'_, PyDict>, key: &str, default: f64) -> PyResult<f64> {
+    match d.get_item(key)? {
+        Some(v) => v
+            .extract()
+            .map_err(|_| err(format!("{key} must be a number"))),
+        None => Ok(default),
+    }
+}
+
+fn child(d: &Bound<'_, PyDict>, key: &str, op: &str, depth: usize) -> PyResult<Box<Node>> {
+    let raw = get(d, key, op)?;
+    let dict = raw
+        .cast::<PyDict>()
+        .map_err(|_| err(format!("{key} in a {op:?} node must be another IR node")))?;
+    Ok(Box::new(node_from_dict(dict, depth + 1)?))
+}
+
+fn children(d: &Bound<'_, PyDict>, key: &str, op: &str, depth: usize) -> PyResult<Vec<Node>> {
+    let raw = get(d, key, op)?;
+    let list: Vec<Bound<'_, PyAny>> = raw
+        .extract()
+        .map_err(|_| err(format!("{key} in a {op:?} node must be a list of IR nodes")))?;
+    let mut out = Vec::with_capacity(list.len());
+    for item in list {
+        let dict = item
+            .cast::<PyDict>()
+            .map_err(|_| err(format!("every entry of {key} must be an IR node")))?;
+        out.push(node_from_dict(dict, depth + 1)?);
+    }
+    Ok(out)
+}
+
+/// Turn a Python dict into an IR node.
+///
+/// Errors name the field and the operator, because an agent debugging a nested tree from the
+/// outside has nothing else to go on. The depth guard is here as well as in the evaluator: a
+/// deeply nested dict would otherwise blow the stack during *conversion*, before the
+/// evaluator's own limit could apply.
+fn node_from_dict(d: &Bound<'_, PyDict>, depth: usize) -> PyResult<Node> {
+    if depth > nrc_solid::ir::MAX_DEPTH {
+        return Err(err(format!(
+            "IR nesting deeper than {} is not accepted",
+            nrc_solid::ir::MAX_DEPTH
+        )));
+    }
+    let op: String = d
+        .get_item("op")?
+        .ok_or_else(|| err("every IR node needs an \"op\" field"))?
+        .extract()
+        .map_err(|_| err("\"op\" must be a string"))?;
+
+    Ok(match op.as_str() {
+        "box" => Node::Box {
+            min: ivec_from(&get(d, "min", &op)?, "min")?,
+            max: ivec_from(&get(d, "max", &op)?, "max")?,
+        },
+        "wedge" => Node::Wedge {
+            min: ivec_from(&get(d, "min", &op)?, "min")?,
+            max: ivec_from(&get(d, "max", &op)?, "max")?,
+            along: axis_from(d, "along", "x")?,
+            up: axis_from(d, "up", "z")?,
+        },
+        "prism" | "cylinder" => Node::Prism {
+            min: ivec_from(&get(d, "min", &op)?, "min")?,
+            max: ivec_from(&get(d, "max", &op)?, "max")?,
+            axis: axis_from(d, "axis", "z")?,
+            sides: usize_from(d, "sides", &op)?,
+            start_deg: f64_or(d, "start_deg", 0.0)?,
+        },
+        "cone" => Node::Cone {
+            min: ivec_from(&get(d, "min", &op)?, "min")?,
+            max: ivec_from(&get(d, "max", &op)?, "max")?,
+            axis: axis_from(d, "axis", "z")?,
+            sides: usize_from(d, "sides", &op)?,
+            start_deg: f64_or(d, "start_deg", 0.0)?,
+        },
+        "pyramid" => Node::Pyramid {
+            min: ivec_from(&get(d, "min", &op)?, "min")?,
+            max: ivec_from(&get(d, "max", &op)?, "max")?,
+            axis: axis_from(d, "axis", "z")?,
+        },
+        "stair" => Node::Stair {
+            origin: ivec_from(&get(d, "origin", &op)?, "origin")?,
+            width: i64_from(d, "width", &op)?,
+            steps: usize_from(d, "steps", &op)?,
+            rise: i64_from(d, "rise", &op)?,
+            run: i64_from(d, "run", &op)?,
+            along: axis_from(d, "along", "x")?,
+            up: axis_from(d, "up", "z")?,
+        },
+        "pipe" => Node::Pipe {
+            min: ivec_from(&get(d, "min", &op)?, "min")?,
+            max: ivec_from(&get(d, "max", &op)?, "max")?,
+            axis: axis_from(d, "axis", "z")?,
+            wall: i64_from(d, "wall", &op)?,
+            sides: usize_from(d, "sides", &op)?,
+            start_deg: f64_or(d, "start_deg", 0.0)?,
+        },
+        "arch" => Node::Arch {
+            centre: ivec_from(
+                &get(d, "centre", &op).or_else(|_| get(d, "center", &op))?,
+                "centre",
+            )?,
+            outer_radius: i64_from(d, "outer_radius", &op)?,
+            thickness: i64_from(d, "thickness", &op)?,
+            depth: i64_from(d, "depth", &op)?,
+            segments: usize_from(d, "segments", &op)?,
+            axis: axis_from(d, "axis", "z")?,
+        },
+        "union" => Node::Union(children(d, "parts", &op, depth)?),
+        "intersect" => Node::Intersect(children(d, "parts", &op, depth)?),
+        "subtract" => Node::Subtract {
+            from: child(d, "from", &op, depth)?,
+            cut: children(d, "cut", &op, depth)?,
+        },
+        "hollow" => Node::Hollow {
+            solid: child(d, "solid", &op, depth)?,
+            thickness: i64_from(d, "thickness", &op)?,
+            open_faces: match d.get_item("open_faces")? {
+                Some(v) => v
+                    .extract()
+                    .map_err(|_| err("open_faces must be a list of face indices"))?,
+                None => Vec::new(),
+            },
+        },
+        "carve_opening" => Node::CarveOpening {
+            wall: child(d, "wall", &op, depth)?,
+            min: ivec_from(&get(d, "min", &op)?, "min")?,
+            max: ivec_from(&get(d, "max", &op)?, "max")?,
+        },
+        "translate" => Node::Translate {
+            node: child(d, "node", &op, depth)?,
+            by: ivec_from(&get(d, "by", &op)?, "by")?,
+        },
+        "mirror" => Node::Mirror {
+            node: child(d, "node", &op, depth)?,
+            axis: axis_from(d, "axis", "x")?,
+            at: match d.get_item("at")? {
+                Some(v) => v.extract().map_err(|_| err("at must be a whole number"))?,
+                None => 0,
+            },
+        },
+        "array" => Node::Array {
+            node: child(d, "node", &op, depth)?,
+            count: usize_from(d, "count", &op)?,
+            offset: ivec_from(&get(d, "offset", &op)?, "offset")?,
+        },
+        other => {
+            return Err(err(format!(
+                "unknown operator {other:?}. Available: box, wedge, prism, cone, pyramid, \
+                 stair, pipe, arch, union, intersect, subtract, hollow, carve_opening, \
+                 translate, mirror, array"
+            )))
+        }
+    })
+}
+
+fn texture_spec_from(d: Option<&Bound<'_, PyDict>>) -> PyResult<nrc_solid::emit::TextureSpec> {
+    let mut spec = nrc_solid::emit::TextureSpec::default();
+    let Some(d) = d else { return Ok(spec) };
+    if let Some(v) = d.get_item("default")? {
+        spec.default = v
+            .extract()
+            .map_err(|_| err("default texture must be a string"))?;
+    }
+    if let Some(v) = d.get_item("top")? {
+        spec.top = Some(
+            v.extract()
+                .map_err(|_| err("top texture must be a string"))?,
+        );
+    }
+    if let Some(v) = d.get_item("bottom")? {
+        spec.bottom = Some(
+            v.extract()
+                .map_err(|_| err("bottom texture must be a string"))?,
+        );
+    }
+    if let Some(v) = d.get_item("scale")? {
+        spec.scale = v
+            .extract()
+            .map_err(|_| err("texture scale must be a number"))?;
+    }
+    if let Some(v) = d.get_item("detail")? {
+        spec.detail = v
+            .extract()
+            .map_err(|_| err("detail must be true or false"))?;
+    }
+    Ok(spec)
+}
+
+/// Compile an IR tree and describe the result, without touching any map.
+#[pyfunction]
+#[pyo3(signature = (ir, textures=None, grid=1))]
+fn solid_compile<'py>(
+    py: Python<'py>,
+    ir: &Bound<'py, PyDict>,
+    textures: Option<&Bound<'py, PyDict>>,
+    grid: i64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let node = node_from_dict(ir, 0)?;
+    let evaluated = nrc_solid::ir::evaluate(&node).map_err(|e| err(e.to_string()))?;
+    let spec = texture_spec_from(textures)?;
+    let (brushes, report) = nrc_solid::emit::emit(&evaluated.solid, &spec, grid);
+
+    let d = PyDict::new(py);
+    d.set_item("op", node.kind())?;
+    d.set_item("nodes", node.node_count())?;
+    d.set_item("depth", node.depth())?;
+    d.set_item("parts", evaluated.solid.len())?;
+    d.set_item("brushes", report.brushes)?;
+    d.set_item("faces", report.faces)?;
+    d.set_item("off_grid_vertices", report.off_grid_vertices)?;
+    d.set_item("non_integer_plane_faces", report.non_integer_faces)?;
+    d.set_item("volume", evaluated.solid.volume())?;
+    let mut warnings = evaluated.warnings.clone();
+    warnings.extend(report.warnings.clone());
+    d.set_item("warnings", warnings)?;
+
+    let b = evaluated.solid.bounds();
+    if b.is_empty() {
+        d.set_item("bounds", py.None())?;
+    } else {
+        let bb = PyDict::new(py);
+        bb.set_item("min", b.min.to_array())?;
+        bb.set_item("max", b.max.to_array())?;
+        bb.set_item("size", b.size().to_array())?;
+        d.set_item("bounds", bb)?;
+    }
+    // Minimum thickness across parts, which is what the thin-brush post-condition checks.
+    let thin = evaluated
+        .solid
+        .parts
+        .iter()
+        .filter_map(|p| p.min_thickness())
+        .fold(f64::INFINITY, f64::min);
+    d.set_item(
+        "min_thickness",
+        if thin.is_finite() { Some(thin) } else { None },
+    )?;
+    d.set_item("_brush_count_check", brushes.len())?;
+    Ok(d)
+}
+
+/// Compile an IR tree and insert the resulting brushes into a map.
+///
+/// A free function rather than a method so that `PyMap` keeps a single `#[pymethods]` block;
+/// it takes the map by reference and mutates it in place either way.
+///
+/// `dry_run` compiles and reports without touching the map, which is what `solid_preview`
+/// uses. Nothing is written to disk here regardless — that still needs an explicit `save`.
+#[pyfunction]
+#[pyo3(signature = (map, ir, textures=None, grid=1, target_classname="worldspawn", dry_run=false, label=None))]
+#[allow(clippy::too_many_arguments)]
+fn solid_commit<'py>(
+    py: Python<'py>,
+    map: &Bound<'py, PyMap>,
+    ir: &Bound<'py, PyDict>,
+    textures: Option<&Bound<'py, PyDict>>,
+    grid: i64,
+    target_classname: &str,
+    dry_run: bool,
+    label: Option<String>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let node = node_from_dict(ir, 0)?;
+    let evaluated = nrc_solid::ir::evaluate(&node).map_err(|e| err(e.to_string()))?;
+    let spec = texture_spec_from(textures)?;
+    let (brushes, report) = nrc_solid::emit::emit(&evaluated.solid, &spec, grid);
+
+    if brushes.is_empty() {
+        return Err(err(
+            "compilation produced no brushes; check the warnings from solid_compile",
+        ));
+    }
+
+    let d = PyDict::new(py);
+    d.set_item("brushes_created", brushes.len())?;
+    d.set_item("faces", report.faces)?;
+    d.set_item("off_grid_vertices", report.off_grid_vertices)?;
+    d.set_item("non_integer_plane_faces", report.non_integer_faces)?;
+    let mut warnings = evaluated.warnings.clone();
+    warnings.extend(report.warnings.clone());
+    d.set_item("warnings", warnings)?;
+    d.set_item("dry_run", dry_run)?;
+    let undo_group = label
+        .map(|l| format!("solid_commit:{l}"))
+        .unwrap_or_else(|| format!("solid_commit:{}", node.kind()));
+    d.set_item("undo_group", undo_group)?;
+
+    if dry_run {
+        d.set_item("committed", false)?;
+        return Ok(d);
+    }
+
+    let mut m = map.borrow_mut();
+    // Marker comments name the group, so a human reading the .map afterwards can see where the
+    // brushes came from and delete them as a unit.
+    let count = brushes.len();
+    let mut prims: Vec<nrc_core::model::Primitive> = brushes
+        .into_iter()
+        .map(nrc_core::model::Primitive::Brush)
+        .collect();
+    if let Some(nrc_core::model::Primitive::Brush(b)) = prims.first_mut() {
+        b.leading
+            .push(format!("// nrc-mcp {} ({count} brushes)", node.kind()));
+    }
+
+    let target = m
+        .inner
+        .entities
+        .iter_mut()
+        .find(|e| e.classname() == target_classname);
+    match target {
+        Some(e) => e.prims.extend(prims),
+        None => {
+            let mut e = nrc_core::model::Entity::default();
+            e.set("classname", target_classname);
+            e.prims = prims;
+            m.inner.entities.push(e);
+            d.set_item("created_entity", target_classname)?;
+        }
+    }
+    d.set_item("committed", true)?;
+    d.set_item("map_brushes_now", m.inner.brush_count())?;
+    Ok(d)
 }

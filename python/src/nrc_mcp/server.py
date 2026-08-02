@@ -43,7 +43,7 @@ except ImportError:  # pragma: no cover - older SDKs
 
 from . import bsp as bspmod
 from . import pack as packmod
-from . import profiles, rules, tasks
+from . import profiles, rules, solids, tasks
 from .kernel import KernelUnavailable, load_map, repo_root, run_mise_task
 
 mcp = _Server("nrc-mcp")
@@ -72,6 +72,12 @@ SESSION = Session()
 
 def active_profile() -> str:
     return os.environ.get("NRC_PROFILE", "")
+
+
+def _kernel():
+    from .kernel import kernel
+
+    return kernel()
 
 
 # ---------------------------------------------------------------------------
@@ -535,6 +541,239 @@ def ship_check(
 
 
 # ---------------------------------------------------------------------------
+# Sculpt (§4)
+# ---------------------------------------------------------------------------
+
+_IR_HELP = """\
+Solid IR: a tree of shape operators that always compiles to valid convex brushes.
+
+Primitives — box, wedge, prism (a "cylinder"; the engine has no curves), cone, pyramid,
+stair, pipe, arch. Operators — union, intersect, subtract, hollow, carve_opening, translate,
+mirror, array.
+
+    {"op": "box", "min": [0,0,0], "max": [512,512,256]}
+    {"op": "hollow", "solid": {...}, "thickness": 16, "open_faces": [5]}
+    {"op": "carve_opening", "wall": {...}, "min": [224,-8,0], "max": [288,24,112]}
+    {"op": "subtract", "from": {...}, "cut": [{...}]}
+    {"op": "union", "parts": [{...}, {...}]}
+    {"op": "stair", "origin": [0,0,0], "width": 128, "steps": 8, "rise": 16, "run": 32,
+     "along": "x", "up": "z"}
+    {"op": "prism", "min": [...], "max": [...], "axis": "z", "sides": 8, "start_deg": 22.5}
+    {"op": "arch", "centre": [...], "outer_radius": 128, "thickness": 32, "depth": 64,
+     "segments": 8, "axis": "z"}
+    {"op": "array", "node": {...}, "count": 4, "offset": [64,0,0]}
+
+All coordinates are whole numbers. A room with a door is `hollow` then `carve_opening`; that
+composition yields exactly the brushes a mapper would draw by hand — three for a doorway.
+
+One honest limit: plane-defining points are always integers, but a brush's *vertices* are
+wherever three planes meet, and for angled shapes (prisms, cones, arches) those miss the grid.
+That is a property of the format, not of this tool — Radiant's cylinders are off-grid too. The
+count comes back as `off_grid_vertices`, and `validate` flags them. Stick to boxes, wedges and
+stairs if you need strictly on-grid geometry."""
+
+
+@mcp.tool()
+def solid_help() -> str:
+    """The Solid IR reference: every operator, its fields, and the on-grid caveat.
+
+    Read this before authoring geometry. It is short.
+    """
+    return _IR_HELP
+
+
+@mcp.tool()
+def solid_compile(ir: dict, textures: dict | None = None, grid: int | None = None) -> dict:
+    """Compile a Solid IR tree and report what it would produce, touching nothing.
+
+    Use this first. It returns brush and face counts, bounds, minimum thickness, off-grid
+    vertex count and any warnings, so a shape can be checked before it is drawn or committed.
+
+    Errors name the failing node by path (e.g. `subtract/cut[0]:box`), because a nested tree is
+    otherwise very hard to debug from the outside. Call `solid_help` for the operator list.
+    """
+    k = _kernel()
+    return k.solid_compile(ir, textures, grid if grid is not None else SESSION.grid)
+
+
+@mcp.tool()
+def solid_preview(
+    ir: dict,
+    textures: dict | None = None,
+    grid: int | None = None,
+    view: str = "sheet",
+    width: int = 1100,
+    height: int = 850,
+) -> list:
+    """Compile a Solid IR tree and render it **without committing** (§4.4).
+
+    The sculpting loop: author IR, preview, adjust, commit. Nothing touches the open map, so
+    this is free to call repeatedly.
+
+    If a map is open the geometry is previewed in place against it, so a new piece can be seen
+    in context rather than floating in isolation.
+    """
+    k = _kernel()
+    g = grid if grid is not None else SESSION.grid
+    # Preview against a *copy*, so an unwanted shape never has to be undone.
+    base = SESSION.map.source() if SESSION.map is not None else '{\n"classname" "worldspawn"\n}\n'
+    scratch = k.Map.parse(base)
+    info = k.solid_commit(scratch, ir, textures, g, "worldspawn", False, "preview")
+    png, ann = scratch.render(
+        view=view,
+        overlay="structural",
+        width=width,
+        height=height,
+        grid=g,
+        grid_spacing=64.0,
+        hide_invisible=False,
+    )
+    extra = (
+        f"preview only — nothing was committed. {info['brushes_created']} brush(es), "
+        f"{info['faces']} faces"
+    )
+    if info["warnings"]:
+        extra += "\nwarnings: " + "; ".join(info["warnings"][:4])
+    return _image_and_notes(png, ann, extra)
+
+
+@mcp.tool()
+def solid_commit(
+    ir: dict,
+    label: str,
+    textures: dict | None = None,
+    grid: int | None = None,
+    target_classname: str = "worldspawn",
+    remember: bool = True,
+) -> dict:
+    """Compile a Solid IR tree and add the brushes to the open map (§4.4).
+
+    Nothing is written to disk: call `map_save` for that. The brushes are tagged with a comment
+    naming `label`, so a human reading the `.map` can see where they came from and delete them
+    as a unit.
+
+    With `remember`, the IR is recorded in a `<map>.solids.json` sidecar under `label`, so the
+    shape can be re-parameterized later with `solid_edit_param` — "make that corridor 32 units
+    wider" instead of moving faces by hand. The `.map` stays canonical; the sidecar is
+    advisory and re-derivable.
+    """
+    m = SESSION.require()
+    k = _kernel()
+    g = grid if grid is not None else SESSION.grid
+    result = k.solid_commit(m, ir, textures, g, target_classname, False, label)
+
+    if remember and SESSION.path is not None:
+        try:
+            solids.put(SESSION.path, label, ir, brushes=result["brushes_created"])
+            result["sidecar"] = str(solids.sidecar_path(SESSION.path))
+        except solids.SolidStoreError as e:
+            # The brushes are already in the map; failing to record the IR is a lesser problem
+            # and must not be reported as though the commit failed.
+            result["sidecar_error"] = str(e)
+    result["next"] = "call map_save to write the map, or render_contact_sheet to look at it"
+    return result
+
+
+@mcp.tool()
+def solid_inspect(name: str | None = None, ir: dict | None = None) -> dict:
+    """Show a Solid IR tree's structure — either a recorded one by `name`, or one passed in.
+
+    The outline names every operator and its parameters with the paths `solid_edit_param`
+    accepts, which is how you find out what there is to change.
+    """
+    if ir is None:
+        if name is None:
+            return {"error": "pass either a recorded name or an ir tree"}
+        if SESSION.path is None:
+            return {"error": "no map is open, so there is no sidecar to read"}
+        try:
+            entry = solids.get(SESSION.path, name)
+        except solids.SolidStoreError as e:
+            return {"error": str(e)}
+        ir = entry["ir"]
+        meta = {k: v for k, v in entry.items() if k != "ir"}
+    else:
+        meta = {}
+    return {"name": name, "outline": solids.describe(ir), "ir": ir, "recorded": meta}
+
+
+@mcp.tool()
+def solid_list() -> dict:
+    """Solid IR trees recorded for the open map, with their brush counts."""
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    try:
+        store = solids.load(SESSION.path)
+    except solids.SolidStoreError as e:
+        return {"error": str(e)}
+    return {
+        "sidecar": str(solids.sidecar_path(SESSION.path)),
+        "solids": {
+            n: {k: v for k, v in e.items() if k not in ("ir", "superseded")}
+            for n, e in sorted(store["solids"].items())
+        },
+    }
+
+
+@mcp.tool()
+def solid_edit_param(
+    name: str,
+    path: str,
+    value: Any,
+    preview_only: bool = True,
+) -> dict:
+    """Change one parameter of a recorded solid and recompile it (§4.4).
+
+    This is the point of keeping the IR: `solid_edit_param("corridor", "max[1]", 192)` widens a
+    corridor, where editing brushes by hand would mean moving several faces consistently.
+
+    `path` is dotted with bracket indices — `from.solid.max[0]`, `cut[0].min`. Run
+    `solid_inspect` to see what paths exist.
+
+    Defaults to `preview_only`: it reports what the change would produce without touching the
+    map. The old brushes are **not** removed automatically — that would mean guessing which
+    brushes came from this solid, and guessing wrong would delete a mapper's work. Delete them
+    yourself, then commit the edited IR.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open, so there is no sidecar to read"}
+    try:
+        entry = solids.get(SESSION.path, name)
+        edited = solids.edit_param(entry["ir"], path, value)
+    except solids.SolidStoreError as e:
+        return {"error": str(e)}
+
+    k = _kernel()
+    try:
+        before = k.solid_compile(entry["ir"], None, SESSION.grid)
+        after = k.solid_compile(edited, None, SESSION.grid)
+    except ValueError as e:
+        return {
+            "error": f"the edited tree does not compile: {e}",
+            "hint": "the parameter was accepted but produces invalid geometry; try another value",
+            "ir": edited,
+        }
+
+    out = {
+        "name": name,
+        "path": path,
+        "value": value,
+        "before": {kk: before[kk] for kk in ("brushes", "faces", "bounds", "volume")},
+        "after": {kk: after[kk] for kk in ("brushes", "faces", "bounds", "volume")},
+        "ir": edited,
+        "preview_only": preview_only,
+    }
+    if not preview_only:
+        solids.put(SESSION.path, name, edited, brushes=after["brushes"], notes=f"edited {path}")
+        out["recorded"] = True
+        out["next"] = (
+            "the sidecar now holds the edited tree; delete the old brushes, then call "
+            "solid_commit to draw the new ones"
+        )
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Project / meta
 # ---------------------------------------------------------------------------
 
@@ -700,6 +939,13 @@ TOOL_NAMES = (
     "pack_pk3",
     "repack_analyze",
     "ship_check",
+    "solid_help",
+    "solid_compile",
+    "solid_preview",
+    "solid_commit",
+    "solid_inspect",
+    "solid_list",
+    "solid_edit_param",
     "task_list",
     "task_run",
     "compile_map",
@@ -725,8 +971,8 @@ def describe_surface() -> str:
         f"active profile: {active_profile() or '(none)'}",
         f"profiles available: {', '.join(profiles.available()) or 'none'}",
         "",
-        "NOT YET IMPLEMENTED (spec sections): §4 sculpting/Solid IR, §5 Blender handoff,",
-        "§6 optimization suite, §7.3 UrT analysis, §9 editor bridge, §11 self-optimization.",
+        "NOT YET IMPLEMENTED (spec sections): §5 Blender handoff, §6 optimization suite,",
+        "§7.3 UrT analysis, §9 editor bridge, §11 self-optimization.",
     ]
     try:
         lines.append(f"mise tasks discovered: {len(tasks.list_tasks())}")

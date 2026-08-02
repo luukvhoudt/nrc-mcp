@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/nrc-core", "crates/nrc-cli", "crates/nrc-py", "crates/nrc-render"]
+members = ["crates/nrc-core", "crates/nrc-cli", "crates/nrc-py", "crates/nrc-render", "crates/nrc-solid"]
 resolver = "2"
 
 [workspace.package]
@@ -12,6 +12,7 @@ rust-version = "1.75"
 [workspace.dependencies]
 nrc-core   = { path = "crates/nrc-core" }
 nrc-render = { path = "crates/nrc-render" }
+nrc-solid  = { path = "crates/nrc-solid" }
 
 [profile.release]
 # The kernel is called per-tool-invocation from Python; startup and throughput
