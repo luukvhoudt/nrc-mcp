@@ -1,13 +1,13 @@
 # The editor bridge: design note
 
-`contrib/mcpbridge` implements spec §9. This note records why it has the shape it
-has, what it deliberately refuses to do, and how it should be offered upstream.
-Operational detail — enabling it, the method table, the Makefile hunk — lives in
-`contrib/mcpbridge/README.md` and is not repeated here.
+`contrib/mcpbridge` is a JSON-RPC server that runs inside NetRadiant-custom. This note
+records why it has the shape it has, what it deliberately refuses to do, and how it
+should be offered upstream. Operational detail — enabling it, the method table, the
+Makefile hunk — lives in `contrib/mcpbridge/README.md` and is not repeated here.
 
-Everything below was checked against upstream source at
-`vendor/netradiant-custom/`. Where the spec and the source disagree, the source wins
-and the disagreement is recorded, as in `docs/spec-corrections.md`.
+Everything below was checked against upstream source at `vendor/netradiant-custom/`.
+Where the design document and the source disagreed, the source won and the
+disagreement is recorded in `docs/spec-corrections.md`.
 
 ---
 
@@ -23,8 +23,8 @@ None of that is in the file.
 
 **Being watched.** A change applied through the bridge appears immediately, inside
 one `UndoableCommand`, and a human can reject it with Ctrl+Z. That property is the
-whole argument for the bridge existing. Spec §4.2 calls visual feedback
-non-negotiable; this is the cheapest form of it that exists.
+whole argument for the bridge existing. Visual feedback is non-negotiable, and this
+is the cheapest form of it there is.
 
 Everything else — analysis, validation, geometry, optimisation — is computed in
 `nrc-mcp` against the saved file. The bridge is a window, not a second
@@ -39,11 +39,11 @@ Four, in priority order. Later ones lose.
    and the only version that keeps working as a downstream patch if it is not.
 2. **No new dependencies.** Nothing to vendor, nothing to `pkg-config`.
 3. **Off unless asked, twice.** A build flag and a runtime preference.
-4. **Feature completeness.** Last. Where §9.2 names something the public headers
-   cannot do, the method is absent and the README says which header would have to
+4. **Feature completeness.** Last. Where the intended method surface named something the
+   public headers cannot do, the method is absent and the README says which header would have to
    change.
 
-Constraint 1 removed five of the nineteen methods §9.2 lists. That is the design
+Constraint 1 removed five of the nineteen methods originally designed. That is the design
 working, not the design failing.
 
 ## 3. Consequences worth defending
@@ -97,7 +97,7 @@ it by classname and keys.
 
 ### One line of JSON is one undo step
 
-§9.2 lists `undo.begin(label)` and `undo.end`. `GlobalUndoSystem().start()` and
+The design listed `undo.begin(label)` and `undo.end`. `GlobalUndoSystem().start()` and
 `finish()` are public, so they were implementable — and are not implemented.
 
 An explicit begin/end pair spanning several requests has a failure mode with no
@@ -118,7 +118,7 @@ written to the settings file in plaintext, and a credential that survives to dis
 by default is a worse bug than not having one.
 
 The handshake is a bare first line, not an RPC method. That keeps the method surface
-at what §9.2 lists and means an unauthenticated peer never reaches the dispatcher.
+minimal and means an unauthenticated peer never reaches the dispatcher.
 
 ### JSON is hand-rolled although rapidjson is already in the tree
 
@@ -145,7 +145,7 @@ Not "not yet" — these are decisions.
 - **No queries the file can answer.** No entity dumps, no shader lists, no leak
   reports. If a call could have been served from the saved `.map`, it should have
   been; the usage log exists partly to catch calls that shouldn't be here.
-- **No arbitrary transform matrix.** §9.2 says `scene.transform(matrix)`.
+- **No arbitrary transform matrix.** The design asked for `scene.transform(matrix)`.
   `SelectionSystem` offers `translateSelected`, `rotateSelected(Quaternion)` and
   `scaleSelected` — there is no general matrix entry point, and `Transformable`
   (the other route) is the same three operations. The method takes the three
@@ -171,16 +171,17 @@ through a compiler. Treat first-build warnings as expected.
 **Two version sensitivities to watch.** `QSocketNotifier::activated` gained a second
 overload in Qt 5.15 and the `int` one is deprecated there; the connect is
 `static_cast`-disambiguated, which works on both but would need revisiting for Qt 6.
-And the `-Ilibs` headers are not a stable interface — see §7.
+And the `-Ilibs` headers are not a stable interface — see section 7.
 
-**Over the line budget.** §10.2 targets under 900 added lines. This is about 1,770
-lines of code (≈1,290 in `mcpbridge.cpp`, ≈460 in `json.h`, plus the header). §6
-below is how that comes down; it comes down by removing methods, not by removing
-comments.
+**Over the line budget.** The submission target is under 900 added lines. This is
+**2,214 lines of code** (1,610 in `mcpbridge.cpp`, 526 in `json.h`, 71 in the header,
+7 in the `.def`). Section 6 is how that comes down, and it comes down by removing
+methods, not by removing comments. `mise run pr:report` measures it rather than
+trusting this paragraph.
 
 ## 6. Getting to a submittable size
 
-§10.1's rule is the mechanism: **any method with zero real-session usage is cut
+The pruning rule is the mechanism: **any method with zero real-session usage is cut
 before submission.** `MCPBridge_LogCalls` and *Plugins → MCP Bridge → Log RPC usage*
 exist to produce that evidence, and the counts are per-method precisely so the cut
 is decided by data rather than by taste.
@@ -203,7 +204,7 @@ disk" — and it is around 500 lines. Ship the proven minimum.
 
 ## 7. What breaks it, and how we find out early
 
-An out-of-tree plugin dies silently when an interface it binds to changes. §10.1's
+An out-of-tree plugin dies silently when an interface it binds to changes. The
 interface-hash watcher should cover exactly this list, because these are the
 declarations the bridge would fail to compile or, worse, misbehave against:
 
@@ -244,28 +245,30 @@ Three more things the watcher should treat as interface, even though they are no
 
 ## 8. How to offer it upstream
 
-Straight from §9.3, unchanged, because it is right.
+In this order. Each step is worthless without the one before it.
 
-**Phase 1 — earn the argument.** Ship phases 1–4 of the project as a purely
-external tool. Use it on real maps. The case for the plugin is a workflow that
-demonstrably works and demonstrably wants live editor state; it is not a design
-document.
+**1 — Earn the argument.** The external tool works on real maps already; that part is
+done. The case for the plugin is a workflow that demonstrably works and demonstrably
+wants live editor state. It is not a design document, and it is not this file.
 
-**Phase 2 — open a Discussion, not a PR.** Describe the plugin, its scope, the
+**2 — Get it compiling.** Nothing below can be claimed while section 5 stands. Green
+on Linux, Windows (MSYS2/mingw) and macOS, matching upstream's own workflows.
+
+**3 — Open a Discussion, not a PR.** Describe the plugin, its scope, the
 zero-core-diff constraint, and ask whether it is wanted in-tree at all. A PR that
 arrives unannounced asks a maintainer to review a decision and an implementation at
 once, and they will quite reasonably decline both.
 
-**Phase 3 — if yes: one PR, one plugin.** Off by default. A short `docs/` note and
-a demo. Only the methods with real usage behind them. No core refactors, no build
-system cleanups, nothing "while I was in there". `uncrustify.cfg` clean, and green
-on all three CI platforms the repo already builds — the continuous-rebase branch
-from §10.1 exists so that this is never in question.
+**4 — If yes: one PR, one plugin.** Off by default. A short `docs/` note and a demo.
+Only the methods with real usage behind them. No core refactors, no build system
+cleanups, nothing "while I was in there". `uncrustify.cfg` clean, and green on all
+three CI platforms the repo already builds — the continuous-rebase branch exists so
+that this is never in question.
 
-**Phase 4 — if no: keep it downstream.** A single directory plus a one-block
-Makefile change is about the cheapest patch to carry, and §7's watcher is what keeps
-it carryable. Nothing in this project blocks on the answer: the external MCP works
-either way, and only live-editor sync is lost.
+**5 — If no: keep it downstream.** A single directory plus a one-block Makefile change
+is about the cheapest patch to carry, and section 7's watcher is what keeps it
+carryable. Nothing here blocks on the answer: the external MCP works either way, and
+only live-editor sync is lost.
 
 Garux is an active maintainer with a specific vision for this fork. Self-contained,
 opt-in and touching nothing is the only shape worth proposing.

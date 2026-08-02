@@ -175,7 +175,7 @@ round-trip. All are implemented and covered by tests.
   bombsites) and the "every gametype needs a deathmatch spawn" rule.
 - The `Confidence` distinction in §8.2 is not bureaucratic. It is the mechanism that would
   have prevented W1 from shipping as a hard failure, and it is enforced in code:
-  `validate.rs` carries `Confidence` on every finding, and `profiles/urt43.yaml` marks every
-  one of its 552 keys.
+  `validate.rs` carries `Confidence` on every finding, and `profiles/urt43.yaml` marks 895
+  entries — 868 verified against the gamepack, 27 explicitly not.
 - §10.1's interface-hash watcher should hash **`help.cpp`** as well as `include/*.h`, since
   that is the real flag inventory and flags are removed there without notice (W7).

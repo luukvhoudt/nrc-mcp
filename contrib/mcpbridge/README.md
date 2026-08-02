@@ -106,8 +106,8 @@ Notes on that hunk:
    everything.
 3. **About...** shows the port and whether a secret is in force.
 4. **Log RPC usage** prints how many times each method was called this session.
-   That number is the input to the pruning rule in the project spec (§10.1): a
-   method nobody calls does not get submitted upstream.
+   That number is the input to the pruning rule: a method nobody calls does not get
+   submitted upstream.
 
 Preferences, all stored in the normal Radiant settings file:
 

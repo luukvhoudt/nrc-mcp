@@ -341,7 +341,7 @@ def render_contact_sheet(
     hide_invisible: bool = True,
     grid_spacing: float = 64.0,
 ) -> list:
-    """Render three orthographic views plus a perspective view in one image (§4.2).
+    """Render three orthographic views plus a perspective view in one image.
 
     This is the default way to look at geometry: one call, one image, and a shape that three
     orthographic views plus a perspective view make unambiguous. Panels clockwise from
@@ -455,7 +455,7 @@ def validate_profile(profile_id: str | None = None, severity_min: str = "info") 
 
 @mcp.tool()
 def bsp_report(lumps_path: str, profile_id: str | None = None) -> dict:
-    """Read a compiled BSP's structure from an unpacked `-json` lump directory (§6.2).
+    """Read a compiled BSP's structure from an unpacked `-json` lump directory.
 
     Produce the directory with `task_run("bsp:json-unpack", [path_to_bsp])`.
 
@@ -477,7 +477,7 @@ def bsp_report(lumps_path: str, profile_id: str | None = None) -> dict:
 
 @mcp.tool()
 def bsp_entity_diff(lumps_path: str, source_map: str | None = None) -> dict:
-    """Compare a compiled BSP's entity lump against the source `.map` (§6.2).
+    """Compare a compiled BSP's entity lump against the source `.map`.
 
     Entities can be dropped silently at compile time — the editor's writer discards empty
     group entities and q3map2 drops what it cannot place — so a count that quietly changed is
@@ -511,7 +511,7 @@ def pack_pk3(bsp: str, complevel: int | None = None, png: bool = False) -> dict:
 
 @mcp.tool()
 def repack_analyze(bsp: str) -> dict:
-    """List every resource a compiled BSP references, via `q3map2 -repack -analyze` (§6.4).
+    """List every resource a compiled BSP references, via `q3map2 -repack -analyze`.
 
     Parsed from the compiler's own dump rather than traced independently — the compiler's view
     of what a BSP needs is the one that decides whether the map works.
@@ -526,7 +526,7 @@ def repack_analyze(bsp: str) -> dict:
 def ship_check(
     target: str | None = None, profile_id: str | None = None, pk3: str | None = None
 ) -> dict:
-    """Run the release checklist (§6.4): naming, levelshot, arena file, package contents.
+    """Run the release checklist: naming, levelshot, arena file, package contents.
 
     Conventions come from the profile's `packaging` section, and unverified ones produce
     `info` rather than failures — the levelshot size and arena key list are community practice
@@ -609,7 +609,7 @@ def solid_preview(
     width: int = 1100,
     height: int = 850,
 ) -> list:
-    """Compile a Solid IR tree and render it **without committing** (§4.4).
+    """Compile a Solid IR tree and render it **without committing**.
 
     The sculpting loop: author IR, preview, adjust, commit. Nothing touches the open map, so
     this is free to call repeatedly.
@@ -650,7 +650,7 @@ def solid_commit(
     target_classname: str = "worldspawn",
     remember: bool = True,
 ) -> dict:
-    """Compile a Solid IR tree and add the brushes to the open map (§4.4).
+    """Compile a Solid IR tree and add the brushes to the open map.
 
     Nothing is written to disk: call `map_save` for that. The brushes are tagged with a comment
     naming `label`, so a human reading the `.map` can see where they came from and delete them
@@ -726,7 +726,7 @@ def solid_edit_param(
     value: Any,
     preview_only: bool = True,
 ) -> dict:
-    """Change one parameter of a recorded solid and recompile it (§4.4).
+    """Change one parameter of a recorded solid and recompile it.
 
     This is the point of keeping the IR: `solid_edit_param("corridor", "max[1]", 192)` widens a
     corridor, where editing brushes by hand would mean moving several faces consistently.
@@ -791,7 +791,7 @@ def asset_plan(
     needs_clean_collision: bool = False,
     is_organic: bool = False,
 ) -> dict:
-    """Decide whether a feature should be a brush, a patch or a mesh (§4.3, §5.5).
+    """Decide whether a feature should be a brush, a patch or a mesh.
 
     The decision rule, in order: *does it block movement, block vis, or need cheap clean
     collision?* → brush. *Is it axis-aligned architecture?* → brush. *Is it curved but simple?*
@@ -865,7 +865,7 @@ def blender_brief(
     silhouette_notes: str = "",
     profile_id: str | None = None,
 ) -> dict:
-    """Emit a numerically complete asset brief plus a ready-to-send Blender prompt (§5.2).
+    """Emit a numerically complete asset brief plus a ready-to-send Blender prompt.
 
     `bounds` is `{"x": [lo, hi], "y": [...], "z": [...]}` in world units — normally the brush
     volume the asset replaces.
@@ -897,7 +897,7 @@ def blender_brief(
 
 @mcp.tool()
 def model_import(path: str, brief: dict, profile_id: str | None = None) -> dict:
-    """Validate an exported mesh against the brief that asked for it (§5.3).
+    """Validate an exported mesh against the brief that asked for it.
 
     Checks scale, fit, origin, triangle budget, material names, UVs and structure. The scale
     check comes first and names the likely cause: a mesh 1/39.37 of the requested size is the
@@ -924,7 +924,7 @@ def model_place(
     profile_id: str | None = None,
     commit: bool = False,
 ) -> dict:
-    """Build the entity that places a model in the world (§5.3).
+    """Build the entity that places a model in the world.
 
     Defaults to returning the key/value pairs without touching the map, so the placement can be
     checked first. Pass `commit=True` to add the entity to the open map.
@@ -973,7 +973,7 @@ def model_make_clip(
     kind: str = "player",
     profile_id: str | None = None,
 ) -> dict:
-    """Fit a convex collision hull to a mesh, returned as Solid IR (§5.4).
+    """Fit a convex collision hull to a mesh, returned as Solid IR.
 
     The hull is a k-DOP: the tightest intersection of half-spaces with `k` fixed normals that
     contains every vertex, pushed outward to the grid so it never cuts into the visual. That is a
@@ -1009,7 +1009,7 @@ def model_make_clip(
 
 @mcp.tool()
 def structural_audit(grid: int | None = None, limit: int = 50) -> dict:
-    """Find brushes marked structural that need not be (§6.1) — the biggest lever on vis cost.
+    """Find brushes marked structural that need not be — the biggest lever on vis cost.
 
     A structural brush blocks visibility and costs portals; a detail brush does not. Anything not
     sealing the map or acting as a major visual blocker should be detail, and converting it is
@@ -1031,7 +1031,7 @@ def structural_audit(grid: int | None = None, limit: int = 50) -> dict:
 
 @mcp.tool()
 def hint_suggest(prt_path: str, limit: int = 10) -> dict:
-    """Propose hint brush planes from a compiled portal file (§6.1).
+    """Propose hint brush planes from a compiled portal file.
 
     Needs a `.prt`, which `-vis -saveprt` writes: compile with the `final` preset, or run
     `task_run("compile:final", [map])`.
@@ -1051,7 +1051,7 @@ def hint_suggest(prt_path: str, limit: int = 10) -> dict:
 
 @mcp.tool()
 def leak_trace(lin_path: str | None = None) -> dict:
-    """Read a leak pointfile and report the path out of the map (§6.1).
+    """Read a leak pointfile and report the path out of the map.
 
     q3map2 writes a `.lin` beside the map when the world is not sealed. The path runs from the
     entity that leaked to the void, so the first point is inside the map and the last is outside;
@@ -1080,7 +1080,7 @@ def leak_trace(lin_path: str | None = None) -> dict:
 
 @mcp.tool()
 def shader_audit(shader_dirs: list[str] | None = None, profile_id: str | None = None) -> dict:
-    """Audit shader references against the shader scripts on disk (§6.3).
+    """Audit shader references against the shader scripts on disk.
 
     Reports shaders the map references but nothing defines, shaders defined but never used,
     shaders shadowing a base-game path — a classic cause of "works for me, broken on the server" —
@@ -1109,7 +1109,7 @@ def shader_audit(shader_dirs: list[str] | None = None, profile_id: str | None = 
 
 @mcp.tool()
 def compile_ab(map_a: str, map_b: str, preset: str = "draft") -> dict:
-    """Compile two variants and diff the numbers that matter (§6.1).
+    """Compile two variants and diff the numbers that matter.
 
     Reports per-stage wall time, draw surface count, leaf count, brush count and BSP size for each,
     and appends a row to `bench/ab-history.jsonl` so regressions stay visible over the life of a
@@ -1131,7 +1131,7 @@ def compile_ab(map_a: str, map_b: str, preset: str = "draft") -> dict:
 
 @mcp.tool()
 def ab_history() -> dict:
-    """Every recorded A/B comparison, oldest first (§6.1)."""
+    """Every recorded A/B comparison, oldest first."""
     try:
         return {"rows": optmod.ab_history()}
     except (OSError, ValueError) as e:
@@ -1155,7 +1155,7 @@ def _profile_or_error(profile_id: str | None) -> tuple[str, dict | None]:
 
 @mcp.tool()
 def navgrid_stats(cell: float = 16, profile_id: str | None = None) -> dict:
-    """Build the walkable grid and report its size and coverage (§7.3).
+    """Build the walkable grid and report its size and coverage.
 
     A cell is walkable when it is empty, the cell below is solid, and there is at least the
     profile's standing height of clear space above it — so the grid is the space a player could
@@ -1187,7 +1187,7 @@ def navgrid_stats(cell: float = 16, profile_id: str | None = None) -> dict:
 
 @mcp.tool()
 def balance_report(cell: float = 16, profile_id: str | None = None) -> dict:
-    """Per-team traversal distance from each spawn group to each objective (§7.3).
+    """Per-team traversal distance from each spawn group to each objective.
 
     Reports path lengths over the walkable grid, the asymmetry between teams, and whether the map
     is mirror-symmetric about its centre. Which classnames count as spawns and objectives comes
@@ -1208,7 +1208,7 @@ def balance_report(cell: float = 16, profile_id: str | None = None) -> dict:
 
 @mcp.tool()
 def sightline_report(samples: int = 200, cell: float = 16, profile_id: str | None = None) -> dict:
-    """Sightline length distribution and power positions (§7.3).
+    """Sightline length distribution and power positions.
 
     Samples walkable positions, casts rays between them at the profile's eye height, and reports how
     far a player can see. Long uncontested lanes are the finding that matters in a sniper-sensitive
@@ -1229,7 +1229,7 @@ def sightline_report(samples: int = 200, cell: float = 16, profile_id: str | Non
 
 @mcp.tool()
 def movement_check(cell: float = 16, profile_id: str | None = None) -> dict:
-    """Check clearances against the profile's movement constants (§7.3).
+    """Check clearances against the profile's movement constants.
 
     Standing headroom, crouch headroom, step height, doorway widths. Every finding names the
     constant it used and that constant's confidence, and **anything derived from an unverified
@@ -1251,7 +1251,7 @@ def movement_check(cell: float = 16, profile_id: str | None = None) -> dict:
 
 @mcp.tool()
 def spawn_safety(cell: float = 16, profile_id: str | None = None) -> dict:
-    """Exits per spawn and distance to the nearest enemy spawn (§7.3).
+    """Exits per spawn and distance to the nearest enemy spawn.
 
     A spawn with one exit is a spawn that can be held; a spawn close to an enemy spawn is a spawn
     that gets contested immediately. Both are design smells worth seeing before playtesting finds
@@ -1275,7 +1275,7 @@ def spawn_safety(cell: float = 16, profile_id: str | None = None) -> dict:
 
 @mcp.tool()
 def bench_run() -> dict:
-    """Run the fitness suite and return the scores (§11.1).
+    """Run the fitness suite and return the scores.
 
     F1 (kernel correctness) is a **gate**, not a score: a run with it red has no score to compare,
     whatever the other signals say. F4 skips without a compiler and F5 is a declarative proxy for
@@ -1307,7 +1307,7 @@ def bench_run() -> dict:
 
 @mcp.tool()
 def upstream_diff(fetch: bool = False) -> dict:
-    """Report upstream drift that would break the editor bridge (§10.1).
+    """Report upstream drift that would break the editor bridge.
 
     Hashes the individual declarations in `include/` the plugin binds to, rather than whole files,
     so it fires when something the plugin calls has actually moved instead of on every comment
@@ -1328,7 +1328,7 @@ def upstream_diff(fetch: bool = False) -> dict:
 
 @mcp.tool()
 def pr_plan_status() -> dict:
-    """Regenerate and summarize the upstream contribution plan (§10.2).
+    """Regenerate and summarize the upstream contribution plan.
 
     Every number is measured, not asserted. The three criteria that cannot be met from here — never
     compiled, no usage telemetry, no maintainer asked — are reported as unmet rather than glossed,
@@ -1347,7 +1347,7 @@ def pr_plan_status() -> dict:
 
 @mcp.tool()
 def selfdev_protected() -> dict:
-    """List the paths self-modification may never touch, and verify their hash pins (§11.4).
+    """List the paths self-modification may never touch, and verify their hash pins.
 
     Read-only, and available whether or not self-dev is enabled: knowing what is frozen is useful
     on its own. §11.4 calls this mechanism "the only thing standing between self-improving and
@@ -1462,7 +1462,7 @@ def resource_profile(profile_id: str) -> str:
 
 @mcp.resource("nrc://conventions")
 def resource_conventions() -> str:
-    """The design tier rules and authoring guidance (§4.3).
+    """The design tier rules and authoring guidance.
 
     Read this before authoring geometry. It says which representation to use and why, what to caulk,
     the authoring order, the composition patterns that work — and what is not built yet, which saves
@@ -1583,12 +1583,21 @@ def describe_surface() -> str:
         f"active profile: {active_profile() or '(none)'}",
         f"profiles available: {', '.join(profiles.available()) or 'none'}",
         "",
-        "NOT BUILT: patch authoring (§4 tier 3), the dimension corpus (§4.3), cover_report (§7.3).",
+        "LIMITS — ask for these and you will get an honest refusal, not a guess:",
+        "  patch authoring    patches are read, validated and rendered, never created.",
+        "                     Curved geometry has to be built in the editor.",
+        "  reference sizes    there is no measured dimension corpus, so sizing comes from",
+        "                     the profile's verified constants.",
+        "  cover analysis     cover density and peek angles are not implemented.",
+        "  traversal time     no player speed is verified, so distances are in world units",
+        "                     and never in seconds.",
+        "  rotated geometry   brushes whose plane points are off-grid are reported as",
+        "                     BRUSH_NOT_EXACT and excluded from analysis rather than",
+        "                     approximated. Every report carries the count.",
         "",
-        "The editor bridge (§9) exists at contrib/mcpbridge but has never been compiled, so it is",
-        "not reachable from here. Kernel self-modification (§11) is gated behind human review",
-        "indefinitely and deliberately not automated; the prompt-layer loop is opt-in via",
-        "NRC_SELFDEV=1.",
+        "The editor bridge at contrib/mcpbridge has never been compiled and is not reachable",
+        "from here. Kernel self-modification is gated behind human review; the prompt-layer",
+        "loop is opt-in via NRC_SELFDEV=1.",
     ]
     try:
         lines.append(f"mise tasks discovered: {len(tasks.list_tasks())}")

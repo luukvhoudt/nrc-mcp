@@ -1,11 +1,11 @@
 # Design conventions
 
-Exposed as the MCP resource `nrc://conventions`. §4.3 asks for this explicitly, because "an agent
-with a valid geometry kernel still produces spaces that feel wrong".
+Exposed as the MCP resource `nrc://conventions`. A valid geometry kernel still produces spaces that
+feel wrong, so this file holds the judgment the kernel cannot.
 
-This file is in `selfdev`'s allowed paths on purpose: §11.3 argues the highest return per unit of
-risk is in the prompt and resource layer, not the kernel, and this is that layer. It is measurable
-through F5, it cannot corrupt anyone's map, and it is trivially revertible.
+It is in `selfdev`'s allowed paths on purpose: the highest return per unit of risk is in the prompt
+and resource layer, not the kernel. Guidance here is measurable through the fitness suite, cannot
+corrupt anyone's map, and is trivially revertible.
 
 ---
 
@@ -33,10 +33,10 @@ pillar that happens to seal a room is still tier 1.
 ### Why the tiers matter more than they look
 
 Structural brushes are the dominant cost on a Q3-engine map. Every one of them contributes portals,
-and portal count drives both compile time and runtime visibility work. §6.1 calls the
-structural-to-detail conversion the single biggest lever available, and `structural_audit` exists to
-find candidates. The corollary for authoring: **default to detail, and promote to structural only
-for geometry that genuinely seals or blocks.**
+and portal count drives both compile time and runtime visibility work. Structural-to-detail
+conversion is the single biggest lever available, and `structural_audit` exists to find candidates.
+The corollary for authoring: **default to detail, and promote to structural only for geometry that
+genuinely seals or blocks.**
 
 ---
 
@@ -64,9 +64,8 @@ The one durable lesson: **do not carry a remembered number**. The design documen
 standing height; the shipped gamepack says 69.375. A corridor sized from the wrong figure is a
 corridor the player cannot stand up in, and it will pass every geometric check.
 
-§4.3 also asks for a dimension corpus — width, height and length distributions per space category,
-extracted from released maps. That is not built. `reference_dimensions` does not exist, and until it
-does, sizing comes from the profile's verified constants plus looking at real maps with
+There is no corpus of measured dimension distributions per space category, so `reference_dimensions`
+does not exist. Sizing comes from the profile's verified constants plus looking at real maps with
 `render_topdown`.
 
 ---
@@ -85,14 +84,19 @@ Two things are worth knowing precisely, because the usual phrase "keep it on gri
   axis-aligned geometry produces it, and unavoidable when a prism or an arch does. `validate` reports
   the count; judging it needs to know which kind of shape produced it.
 
+Related, and stronger: geometry whose *plane-defining points* are off-grid cannot be evaluated
+exactly at all. It is reported as `BRUSH_NOT_EXACT` and excluded from analysis rather than
+approximated. Authoring on the grid is therefore not only tidiness — it is what keeps the geometry
+analysable.
+
 ---
 
 ## Authoring order
 
 1. `asset_plan` — decide the tier before building anything.
 2. `solid_compile` — check counts, bounds and warnings without touching the map.
-3. `solid_preview` — look at it. §4.2 is blunt that sculpting blind fails.
-4. `solid_commit` — with a label, so the brushes say where they came from and the IR is recorded.
+3. `solid_preview` — look at it. Sculpting blind fails.
+4. `solid_commit` — with a label, so the brushes say where they came from and the shape is recorded.
 5. `validate` and `validate_profile` — geometry, then the game's own rules.
 6. `compile_map` with the `draft` preset — the compiler is the only authority on whether it builds.
 7. `render_contact_sheet` — confirm nothing else moved.
@@ -106,8 +110,8 @@ Steps 2 and 3 are cheap and step 4 is not, which is the whole reason the preview
 **A room** is a hollowed box. `hollow` gives six brushes — floor, ceiling, four walls — which is
 what a mapper draws.
 
-**A doorway** is `carve_opening` on a wall, or `subtract` on a room. Either yields three brushes:
-left column, right column, lintel. If it yields more, the cutter is not spanning the wall's full
+**A doorway** is `carve_opening` on a wall, or `subtract` on a room, and yields three brushes: left
+column, right column, lintel. If it yields more, the cutter is not spanning the wall's full
 thickness; extend it past both faces.
 
 **A window** is the same with the opening clear of floor and ceiling, giving four brushes.
@@ -120,14 +124,14 @@ Overlapping brushes are legal and splitting them gains nothing.
 
 ---
 
-## What is not built yet
+## What the tools will not do for you
 
 Said plainly, because planning around a tool that does not exist wastes more time than the tool would
 have saved:
 
-- **Patches** are readable and renderable but not authorable. Tier 3 geometry has to be built in the
-  editor for now.
-- **The dimension corpus** (§4.3) does not exist, so there are no measured distributions to size
-  against.
-- **`reference_dimensions`, `balance_report`, `sightline_report`, `cover_report`** — the §7.3 analysis
-  tools are not wired up.
+- **Patches are not authorable.** They are read, validated, tessellated and rendered, never created.
+  Tier 3 geometry has to be built in the editor.
+- **There are no measured reference dimensions**, and no cover-density or peek-angle analysis.
+- **No report gives you a time.** No player movement speed is verified, so `balance_report` answers
+  in world units and never in seconds. The distances are comparable to each other, which is what
+  balance actually needs.

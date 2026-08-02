@@ -165,10 +165,13 @@ def test_server_imports_and_describes_itself():
     for tool in ("map_open", "map_stats", "validate", "task_list", "compile_map"):
         assert tool in text
     # Honesty about scope is part of the surface: an agent must not plan around tools that do not
-    # exist. The wording changed as phases landed, so assert on the substance — that the listing
-    # names something as unbuilt and warns that the editor bridge is uncompiled.
-    assert "NOT BUILT" in text
+    # exist. Assert on the substance rather than on a phrase, since the wording is prose — the
+    # listing has to declare its limits, name the specific ones an agent would otherwise assume,
+    # and warn that the editor bridge is uncompiled.
+    assert "LIMITS" in text
     assert "never been compiled" in text
+    for gap in ("patch authoring", "traversal time", "BRUSH_NOT_EXACT"):
+        assert gap in text, f"the surface no longer discloses {gap!r}"
 
 
 def test_tools_refuse_to_run_without_an_open_map():
