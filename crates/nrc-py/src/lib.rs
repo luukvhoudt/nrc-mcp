@@ -329,6 +329,28 @@ impl PyMap {
 
         let d = PyDict::new(py);
         d.set_item("faces", b.faces.len())?;
+        // Per-face contents and the derived detail flag. Without these a caller has to re-parse
+        // the `.map` text to learn whether a brush is structural, which is exactly the second,
+        // worse parser this binding exists to prevent.
+        let contents: Vec<i64> = b
+            .faces
+            .iter()
+            .map(|f| f.surface.as_ref().map_or(0, |s| s.contents.value() as i64))
+            .collect();
+        d.set_item(
+            "detail",
+            contents
+                .iter()
+                .any(|c| c & nrc_core::stats::BRUSH_DETAIL_MASK != 0),
+        )?;
+        d.set_item("face_contents", &contents)?;
+        d.set_item(
+            "surface_flags",
+            b.faces
+                .iter()
+                .map(|f| f.surface.as_ref().map_or(0, |s| s.flags.value() as i64))
+                .collect::<Vec<i64>>(),
+        )?;
         d.set_item(
             "shaders",
             b.faces

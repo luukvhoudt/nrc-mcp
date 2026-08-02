@@ -1,13 +1,22 @@
 //! Turning a solid into brushes a `.map` can hold.
 //!
-//! Each polytope becomes one brush, and each of its planes becomes one face. A face is written
-//! as three points on its plane, and those points are found by solving the plane equation over
-//! the integer lattice ([`crate::poly::integer_plane_points`]) so the file stays exact.
+//! Each polytope becomes one brush, and each of its planes becomes one face, written as three
+//! points on that plane. Which three points is not arbitrary, and getting it wrong produced a real
+//! bug worth recording.
 //!
-//! When the lattice misses a plane — which insetting can cause, see that function — the face
-//! falls back to the polygon's own rational corners written as decimals. That is legal (Radiant
-//! writes non-integer plane points for angled brushes) but it is a slightly weaker guarantee, so
-//! the count of such faces is reported rather than passed over.
+//! Three sources are tried in order:
+//!
+//! 1. **The face's own corners**, when three non-collinear ones are integers. These are exact, and
+//!    crucially they are *near the shape*.
+//! 2. **A lattice solve** ([`crate::poly::integer_plane_points`]), which finds some integer point
+//!    satisfying the plane equation.
+//! 3. **The rational corners as decimals**, when neither works.
+//!
+//! The order matters because the lattice solve picks its base point wherever `d / n` happens to
+//! land, and for a steeply angled plane with a large distance that is very far away. An arch of
+//! radius 192 emitted plane points at ±280,000 units — geometrically correct, on the right plane,
+//! and far outside the ±65536 world limit, which the validator then flagged. The fitness suite
+//! caught it; the tests here keep it caught.
 
 use crate::poly::{integer_plane_points, Solid};
 use nrc_core::exact::IPlane;
@@ -74,26 +83,30 @@ pub fn emit(solid: &Solid, tex: &TextureSpec, grid: i64) -> (Vec<Brush>, EmitRep
 
         let mut faces = Vec::with_capacity(simplified.len());
         for (fi, plane) in simplified.planes().iter().enumerate() {
-            let points = match integer_plane_points(plane) {
-                Some(p) => [
-                    [num(p[0].x as f64), num(p[0].y as f64), num(p[0].z as f64)],
-                    [num(p[1].x as f64), num(p[1].y as f64), num(p[1].z as f64)],
-                    [num(p[2].x as f64), num(p[2].y as f64), num(p[2].z as f64)],
-                ],
-                None => {
-                    report.non_integer_faces += 1;
-                    match face_corner_points(&geom, fi) {
-                        Some(p) => p,
-                        None => {
-                            report.warnings.push(format!(
-                                "part {pi} face {fi} has no integer points on its plane and no \
-                                 usable corners either; it was dropped, which will leave the \
-                                 brush open"
-                            ));
-                            continue;
+            // Corners first: they are exact and local. A lattice solve is exact but can land
+            // hundreds of thousands of units away, outside the world limit.
+            let points = match integral_corner_points(&geom, fi, plane) {
+                Some(p) => p,
+                None => match integer_plane_points(plane).and_then(|p| within_world(&p)) {
+                    Some(p) => [
+                        [num(p[0].x as f64), num(p[0].y as f64), num(p[0].z as f64)],
+                        [num(p[1].x as f64), num(p[1].y as f64), num(p[1].z as f64)],
+                        [num(p[2].x as f64), num(p[2].y as f64), num(p[2].z as f64)],
+                    ],
+                    None => {
+                        report.non_integer_faces += 1;
+                        match face_corner_points(&geom, fi) {
+                            Some(p) => p,
+                            None => {
+                                report.warnings.push(format!(
+                                    "part {pi} face {fi} has no usable points on its plane; it was \
+                                     dropped, which will leave the brush open"
+                                ));
+                                continue;
+                            }
                         }
                     }
-                }
+                },
             };
 
             let shader = pick_shader(plane, tex);
@@ -151,7 +164,64 @@ fn pick_shader(plane: &IPlane, tex: &TextureSpec) -> String {
     }
 }
 
-/// Three non-collinear corners of a face, as a fallback when the lattice misses its plane.
+/// Reject a lattice solution that sits outside the world, however correct the arithmetic.
+///
+/// A plane point beyond `MAX_WORLD_COORD` is one q3map2 will refuse and the validator will flag, so
+/// a "valid" answer that far out is worse than falling through to the next strategy.
+fn within_world(points: &[nrc_core::exact::IVec3; 3]) -> Option<[nrc_core::exact::IVec3; 3]> {
+    let limit = nrc_core::math::MAX_WORLD_COORD as i64;
+    let ok = points
+        .iter()
+        .all(|p| p.x.abs() <= limit && p.y.abs() <= limit && p.z.abs() <= limit);
+    if ok {
+        Some(*points)
+    } else {
+        None
+    }
+}
+
+/// Three integer corners of a face, oriented to reproduce the plane exactly.
+///
+/// The preferred source. A face's corners lie on its plane by construction and sit next to the
+/// geometry, so the emitted numbers are the ones a mapper would recognize.
+fn integral_corner_points(
+    geom: &nrc_core::winding::BrushGeometry,
+    face_index: usize,
+    plane: &IPlane,
+) -> Option<[[Num; 3]; 3]> {
+    let face = geom.faces.get(face_index)?.as_ref()?;
+    if face.vertices.len() < 3 {
+        return None;
+    }
+    let ints: Vec<nrc_core::exact::IVec3> = face
+        .vertices
+        .iter()
+        .filter_map(|&i| geom.vertices[i].to_ivec3())
+        .collect();
+    if ints.len() < 3 {
+        return None;
+    }
+
+    // Any three that define this exact plane. Adjacent corners of a many-sided face can be
+    // near-collinear, so try combinations rather than assuming the first three work.
+    for i in 1..ints.len() - 1 {
+        let (a, b, c) = (ints[0], ints[i], ints[i + 1]);
+        let Some(derived) = IPlane::from_points(a, b, c) else {
+            continue;
+        };
+        let ordered = if derived == *plane {
+            [a, b, c]
+        } else if derived == plane.flipped() {
+            [a, c, b]
+        } else {
+            continue;
+        };
+        return Some(ordered.map(|p| [num(p.x as f64), num(p.y as f64), num(p.z as f64)]));
+    }
+    None
+}
+
+/// Three non-collinear corners of a face, as a fallback when nothing integral works.
 fn face_corner_points(
     geom: &nrc_core::winding::BrushGeometry,
     face_index: usize,
@@ -341,5 +411,139 @@ mod tests {
         );
         let text = write_map(&wrap(brushes));
         assert_eq!(write_map(&parse_map(&text).unwrap()), text);
+    }
+}
+
+#[cfg(test)]
+mod plane_point_tests {
+    use super::*;
+    use crate::prim;
+    use nrc_core::exact::ivec3;
+    use nrc_core::math::MAX_WORLD_COORD;
+
+    fn all_plane_points_within_world(brushes: &[Brush]) -> bool {
+        brushes.iter().all(|b| {
+            b.faces.iter().all(|f| {
+                f.points
+                    .iter()
+                    .flatten()
+                    .all(|n| n.value().abs() <= MAX_WORLD_COORD)
+            })
+        })
+    }
+
+    #[test]
+    fn an_arch_emits_plane_points_near_the_shape_not_hundreds_of_thousands_of_units_away() {
+        // The regression. A lattice solve puts this arch's plane points at ±280,000 units, which
+        // is on the right plane and outside the world. Corners come first for exactly this reason.
+        let arch = prim::arch(ivec3(0, 0, 0), 192, 48, 64, 8, prim::Axis::Z).unwrap();
+        let (brushes, report) = emit(&arch, &TextureSpec::default(), 1);
+        assert_eq!(brushes.len(), 8);
+        assert!(
+            all_plane_points_within_world(&brushes),
+            "plane points escaped the world limit again"
+        );
+        assert_eq!(
+            report.non_integer_faces, 0,
+            "an arch's corners are integers"
+        );
+    }
+
+    #[test]
+    fn every_primitive_emits_plane_points_within_the_world() {
+        let builds = [
+            (
+                "box",
+                prim::cuboid(ivec3(0, 0, 0), ivec3(64, 64, 64)).unwrap(),
+            ),
+            (
+                "wedge",
+                prim::wedge(
+                    ivec3(0, 0, 0),
+                    ivec3(128, 64, 64),
+                    prim::Axis::X,
+                    prim::Axis::Z,
+                )
+                .unwrap(),
+            ),
+            (
+                "prism",
+                prim::prism(
+                    ivec3(-192, -192, 0),
+                    ivec3(192, 192, 256),
+                    prim::Axis::Z,
+                    12,
+                    15.0,
+                )
+                .unwrap(),
+            ),
+            (
+                "cone",
+                prim::cone(
+                    ivec3(-128, -128, 0),
+                    ivec3(128, 128, 256),
+                    prim::Axis::Z,
+                    10,
+                    0.0,
+                )
+                .unwrap(),
+            ),
+            (
+                "pipe",
+                prim::pipe(
+                    ivec3(-128, -128, 0),
+                    ivec3(128, 128, 512),
+                    prim::Axis::Z,
+                    24,
+                    8,
+                    22.5,
+                )
+                .unwrap(),
+            ),
+            (
+                "arch",
+                prim::arch(ivec3(2048, -1024, 0), 384, 64, 128, 12, prim::Axis::Z).unwrap(),
+            ),
+        ];
+        for (name, solid) in builds {
+            let (brushes, _) = emit(&solid, &TextureSpec::default(), 1);
+            assert!(!brushes.is_empty(), "{name} emitted nothing");
+            assert!(
+                all_plane_points_within_world(&brushes),
+                "{name} emitted a plane point outside the world"
+            );
+        }
+    }
+
+    #[test]
+    fn emitted_geometry_reproduces_the_source_planes_exactly() {
+        // Corners are only usable if they reconstruct the same plane, including its facing. If the
+        // orientation were wrong the brush would enclose nothing, so re-derive and compare.
+        let solid = prim::prism(
+            ivec3(-96, -96, 0),
+            ivec3(96, 96, 192),
+            prim::Axis::Z,
+            8,
+            22.5,
+        )
+        .unwrap();
+        let (brushes, _) = emit(&solid, &TextureSpec::default(), 1);
+        let derived = nrc_core::brush_geometry(&brushes[0].faces).expect("a valid brush");
+        let original = solid.parts[0].simplified();
+        assert_eq!(derived.vertices.len(), original.vertices().len());
+        assert!((derived.bounds().min.z - 0.0).abs() < 1e-9);
+        assert!((derived.bounds().max.z - 192.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_lattice_solution_outside_the_world_is_rejected() {
+        let far = [
+            ivec3(200_000, 0, 0),
+            ivec3(200_000, 1, 0),
+            ivec3(200_000, 0, 1),
+        ];
+        assert!(within_world(&far).is_none());
+        let near = [ivec3(64, 0, 0), ivec3(64, 1, 0), ivec3(64, 0, 1)];
+        assert!(within_world(&near).is_some());
     }
 }

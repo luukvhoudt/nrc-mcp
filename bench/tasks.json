@@ -1,0 +1,194 @@
+{
+  "note": "F5 cases. Each is an IR tree plus the properties its output must have. This is a proxy for \u00a711.1's natural-language briefs \u2014 the authoring step is fixed here \u2014 so it measures the compile-and-validate half only, and the report says so.",
+  "cases": [
+    {
+      "name": "sealed_room",
+      "grid": 8,
+      "expect": {
+        "brushes": 6
+      },
+      "ir": {
+        "op": "hollow",
+        "solid": {
+          "op": "box",
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            512,
+            512,
+            256
+          ]
+        },
+        "thickness": 16
+      }
+    },
+    {
+      "name": "two_rooms_and_a_corridor",
+      "grid": 8,
+      "expect": {
+        "max_brushes": 24
+      },
+      "ir": {
+        "op": "union",
+        "parts": [
+          {
+            "op": "subtract",
+            "from": {
+              "op": "hollow",
+              "solid": {
+                "op": "box",
+                "min": [
+                  0,
+                  0,
+                  0
+                ],
+                "max": [
+                  512,
+                  512,
+                  256
+                ]
+              },
+              "thickness": 16
+            },
+            "cut": [
+              {
+                "op": "box",
+                "min": [
+                  496,
+                  224,
+                  0
+                ],
+                "max": [
+                  528,
+                  288,
+                  112
+                ]
+              }
+            ]
+          },
+          {
+            "op": "subtract",
+            "from": {
+              "op": "hollow",
+              "solid": {
+                "op": "box",
+                "min": [
+                  512,
+                  192,
+                  0
+                ],
+                "max": [
+                  896,
+                  320,
+                  256
+                ]
+              },
+              "thickness": 16
+            },
+            "cut": [
+              {
+                "op": "box",
+                "min": [
+                  496,
+                  224,
+                  0
+                ],
+                "max": [
+                  528,
+                  288,
+                  112
+                ]
+              },
+              {
+                "op": "box",
+                "min": [
+                  880,
+                  224,
+                  0
+                ],
+                "max": [
+                  912,
+                  288,
+                  112
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "staircase_between_floors",
+      "grid": 8,
+      "expect": {
+        "brushes": 8
+      },
+      "ir": {
+        "op": "stair",
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "width": 128,
+        "steps": 8,
+        "rise": 16,
+        "run": 32,
+        "along": "x",
+        "up": "z"
+      }
+    },
+    {
+      "name": "cover_object_row",
+      "grid": 8,
+      "expect": {
+        "brushes": 4
+      },
+      "ir": {
+        "op": "array",
+        "node": {
+          "op": "box",
+          "min": [
+            0,
+            0,
+            0
+          ],
+          "max": [
+            64,
+            64,
+            48
+          ]
+        },
+        "count": 4,
+        "offset": [
+          192,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "arched_opening",
+      "grid": 1,
+      "expect": {
+        "max_brushes": 12
+      },
+      "ir": {
+        "op": "arch",
+        "centre": [
+          0,
+          0,
+          0
+        ],
+        "outer_radius": 192,
+        "thickness": 48,
+        "depth": 64,
+        "segments": 8,
+        "axis": "z"
+      }
+    }
+  ]
+}

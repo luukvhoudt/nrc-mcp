@@ -274,8 +274,21 @@ depends     = ["kernel:build"]
 run         = "uv run python tools/bench.py --all --out $NRC_BENCH_OUT"
 
 [tasks."selfdev:protected"]
-description = "List protected paths and verify their hash pins (§11.4)"
+description = "Verify the hash pins on paths self-dev may not touch (§11.4)"
 run         = "uv run python tools/protected.py --verify"
+
+[tasks."selfdev:repin"]
+description = "Re-pin protected paths — for a human who has reviewed the change (§11.4)"
+confirm     = "This freezes new hashes for the paths that define what correct means. Only do this after reading the diff."
+run         = "uv run python tools/protected.py --repin"
+
+[tasks."selfdev:status"]
+description = "Whether self-dev is enabled, what it may touch, and the attempt history"
+run         = "uv run python tools/selfdev.py status"
+
+[tasks."selfdev:history"]
+description = "Every self-dev attempt with its scores, accepted and rejected (§11.2)"
+run         = "uv run python tools/selfdev.py history"
 
 # ---------------------------------------------------------------------------
 # pr:* — the living PR plan (§10)
@@ -286,8 +299,16 @@ description = "Mirror contrib/mcpbridge into a netradiant-custom checkout for th
 run         = "uv run python tools/sync_bridge.py"
 
 [tasks."pr:watch"]
-description = "Poll upstream for drift; hash include/*.h signatures the bridge binds to (§10.1)"
-run         = "uv run python tools/pr_watch.py --state docs/upstream-state.json"
+description = "Poll upstream for drift; hash the include/*.h declarations the bridge binds to (§10.1)"
+run         = "uv run python tools/pr_watch.py --fetch"
+
+[tasks."pr:baseline"]
+description = "Record the current upstream state as the drift baseline"
+run         = "uv run python tools/pr_watch.py --baseline"
+
+[tasks."pr:report"]
+description = "Regenerate docs/pr-plan.md from upstream state and readiness measurements (§10)"
+run         = "uv run python tools/pr_report.py"
 
 # ---------------------------------------------------------------------------
 # watch

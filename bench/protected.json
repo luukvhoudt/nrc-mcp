@@ -1,0 +1,21 @@
+{
+  "files": {
+    "bench/fitness.json": "c32ce9ac7a9868a99e02e73ae18e027622d55078b9716ea9fa6606d07ede3059",
+    "bench/labels.json": "fafe2188f3ba0bc909a74c93c2b380ea39547f79e8fe00a20c9d54378caca694",
+    "bench/tasks.json": "21b3dddb49f6f19453f1fc17e888f01129c0d50743cdf0f719f236960e724c81",
+    "crates/nrc-core/src/exact.rs": "cbba9ae360f8932e659bcb6e2e04cfbc2fd2f482c8bde3cd32a222fa0c04cd28",
+    "crates/nrc-core/src/num.rs": "cf94b10b6c116c8ea13a6a1f945f975dfffd8fee97602a65794471b084c18edb",
+    "crates/nrc-core/src/winding.rs": "a0cb0d69d1e8b59879957d319c02461dd4097739cc4a7d9d561e2c748926cb79",
+    "tools/bench.py": "f3f82df62c5c72ab8584ae24ec5260981bca303949264401792e23d7693afef3",
+    "tools/difftest.py": "ac469686034f90c6caa9a052e3115b8761262a95f30b1df784c1a4084cf712e3",
+    "tools/protected.py": "40ef9001aaeebac41875f4ff6938b525ab7abb985cee3ceb8b3cd01b281d3256",
+    "tools/seam_lint.py": "ea785b58fd82d027e7cabb3e62deea7f73274b5a71889f9ec0e38eb5803b31f5"
+  },
+  "note": "Hash pins for paths self-dev may not modify (\u00a711.4). Re-pinned only by a human who has reviewed the change; the loop cannot call --repin.",
+  "profiles": {
+    "urt43.yaml": "daeaa63df42c1bd37fc12f6827fdd63a75365decc83e3a6514a0af87b785c9b6"
+  },
+  "trees": {
+    "corpus/synthetic/degenerate": "04884ab27cfe08a8c612e9f3a0506d11f9219860158f42907add46f7ddaf43c1"
+  }
+}

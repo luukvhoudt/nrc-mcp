@@ -1,0 +1,37 @@
+{
+  "note": "The fitness signal definitions (\u00a711.1). Protected from self-modification: an agent that can edit what is measured is optimizing the ruler (\u00a711.4).",
+  "signals": {
+    "F1": {
+      "name": "kernel correctness",
+      "type": "gate",
+      "measured_by": "tools/difftest.py over the corpus"
+    },
+    "F2": {
+      "name": "sculpting quality",
+      "type": "lower_is_better",
+      "measured_by": "brushes above hand-built reference counts"
+    },
+    "F3": {
+      "name": "validator accuracy",
+      "type": "higher_is_better",
+      "measured_by": "precision/recall against bench/labels.json"
+    },
+    "F4": {
+      "name": "optimizer efficacy",
+      "type": "higher_is_better",
+      "measured_by": "compile deltas; needs a compiler"
+    },
+    "F5": {
+      "name": "task success",
+      "type": "higher_is_better",
+      "measured_by": "bench/tasks.json cases, compiled and validated"
+    },
+    "F6": {
+      "name": "cost",
+      "type": "lower_is_better",
+      "measured_by": "wall time"
+    }
+  },
+  "gate_rule": "F1 is a gate and can never be traded against another signal (\u00a711.4).",
+  "merge_rule": "merge only if F1 green AND no signal regressed AND at least one improved."
+}

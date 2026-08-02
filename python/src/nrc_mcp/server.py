@@ -42,8 +42,10 @@ except ImportError:  # pragma: no cover - older SDKs
     from mcp.server.fastmcp import FastMCP as _Server
     from mcp.server.fastmcp import Image as _Image
 
+from . import analysis as anamod
 from . import blender as blendermod
 from . import bsp as bspmod
+from . import optimize as optmod
 from . import pack as packmod
 from . import profiles, rules, solids, tasks
 from .kernel import KernelUnavailable, load_map, repo_root, run_mise_task
@@ -1001,8 +1003,358 @@ def model_make_clip(
 
 
 # ---------------------------------------------------------------------------
+# Optimize (§6.1, §6.3)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def structural_audit(grid: int | None = None, limit: int = 50) -> dict:
+    """Find brushes marked structural that need not be (§6.1) — the biggest lever on vis cost.
+
+    A structural brush blocks visibility and costs portals; a detail brush does not. Anything not
+    sealing the map or acting as a major visual blocker should be detail, and converting it is
+    usually the cheapest large win available on a Q3-engine map.
+
+    The estimated benefit per brush is a **heuristic, not a measurement**. The real number needs a
+    `-vis` compile before and after, which `compile_ab` can do. Treat the list as candidates to
+    look at, not as a to-do list to apply blindly.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    try:
+        return optmod.structural_audit(
+            SESSION.path, grid if grid is not None else SESSION.grid, limit=limit
+        )
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def hint_suggest(prt_path: str, limit: int = 10) -> dict:
+    """Propose hint brush planes from a compiled portal file (§6.1).
+
+    Needs a `.prt`, which `-vis -saveprt` writes: compile with the `final` preset, or run
+    `task_run("compile:final", [map])`.
+
+    §6.1 calls this "tedious, high-skill, high-payoff work that almost nobody does properly by
+    hand". Each suggestion names the leaf, its portal count and a proposed splitting plane, with a
+    predicted before/after — predicted, because confirming it needs another `-vis` run.
+    """
+    p = Path(prt_path)
+    if not p.is_absolute():
+        p = repo_root() / p
+    try:
+        return optmod.hint_suggest(p, limit=limit)
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def leak_trace(lin_path: str | None = None) -> dict:
+    """Read a leak pointfile and report the path out of the map (§6.1).
+
+    q3map2 writes a `.lin` beside the map when the world is not sealed. The path runs from the
+    entity that leaked to the void, so the first point is inside the map and the last is outside;
+    the gap is somewhere along it.
+
+    Defaults to the `.lin` beside the open map.
+    """
+    if lin_path:
+        p = Path(lin_path)
+        if not p.is_absolute():
+            p = repo_root() / p
+    elif SESSION.path is not None:
+        p = SESSION.path.with_suffix(".lin")
+    else:
+        return {"error": "no pointfile given and no map is open"}
+    if not p.is_file():
+        return {
+            "error": f"{p} does not exist",
+            "hint": "a pointfile only exists when the last compile leaked; a sealed map has none",
+        }
+    try:
+        return optmod.leak_trace(p, SESSION.path)
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def shader_audit(shader_dirs: list[str] | None = None, profile_id: str | None = None) -> dict:
+    """Audit shader references against the shader scripts on disk (§6.3).
+
+    Reports shaders the map references but nothing defines, shaders defined but never used,
+    shaders shadowing a base-game path — a classic cause of "works for me, broken on the server" —
+    and the watercaulk trap, where a visible surface's shader draws nothing.
+
+    `shader_dirs` defaults to the game's script directory from the environment.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    dirs: list[str] = list(shader_dirs or [])
+    if not dirs:
+        base = os.environ.get("NRC_FS_BASEPATH") or os.environ.get("URT_BASEPATH")
+        game = os.environ.get("NRC_FS_GAME")
+        if base and game:
+            dirs = [str(Path(base) / game / "scripts")]
+    if not dirs:
+        return {
+            "error": "no shader directories given and none could be inferred",
+            "hint": "pass shader_dirs, or set the game path in mise.local.toml",
+        }
+    try:
+        return optmod.shader_audit(SESSION.path, dirs, profile_id or active_profile() or None)
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def compile_ab(map_a: str, map_b: str, preset: str = "draft") -> dict:
+    """Compile two variants and diff the numbers that matter (§6.1).
+
+    Reports per-stage wall time, draw surface count, leaf count, brush count and BSP size for each,
+    and appends a row to `bench/ab-history.jsonl` so regressions stay visible over the life of a
+    project rather than being rediscovered.
+
+    This is how a structural_audit suggestion gets *confirmed* rather than assumed: apply it to a
+    copy, compile both, and read the portal delta.
+    """
+    a, b = Path(map_a), Path(map_b)
+    if not a.is_absolute():
+        a = repo_root() / a
+    if not b.is_absolute():
+        b = repo_root() / b
+    try:
+        return optmod.compile_ab(a, b, preset=preset)
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def ab_history() -> dict:
+    """Every recorded A/B comparison, oldest first (§6.1)."""
+    try:
+        return {"rows": optmod.ab_history()}
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Analyze gameplay (§7.3)
+# ---------------------------------------------------------------------------
+
+
+def _profile_or_error(profile_id: str | None) -> tuple[str, dict | None]:
+    pid = profile_id or active_profile()
+    if not pid:
+        return "", {
+            "error": "no profile selected; the movement constants live there",
+            "available": profiles.available(),
+        }
+    return pid, None
+
+
+@mcp.tool()
+def navgrid_stats(cell: float = 16, profile_id: str | None = None) -> dict:
+    """Build the walkable grid and report its size and coverage (§7.3).
+
+    A cell is walkable when it is empty, the cell below is solid, and there is at least the
+    profile's standing height of clear space above it — so the grid is the space a player could
+    actually occupy, not merely the empty space.
+
+    This is a **voxel approximation, not compiled AAS**. It is good enough for distances and
+    reachability and will disagree with the engine at the margins. Everything else here is built on
+    it, so run this first to see whether the map is tractable at the cell size you want.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    pid, err = _profile_or_error(profile_id)
+    if err:
+        return err
+    try:
+        g = anamod.build_navgrid(SESSION.path, cell=cell, profile_id=pid)
+        return (
+            anamod.navgrid_summary(g)
+            if hasattr(anamod, "navgrid_summary")
+            else {
+                "cell": cell,
+                "walkable_cells": len(getattr(g, "walkable", []) or []),
+                "note": "grid built; see balance_report or sightline_report to use it",
+            }
+        )
+    except (OSError, ValueError, MemoryError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def balance_report(cell: float = 16, profile_id: str | None = None) -> dict:
+    """Per-team traversal distance from each spawn group to each objective (§7.3).
+
+    Reports path lengths over the walkable grid, the asymmetry between teams, and whether the map
+    is mirror-symmetric about its centre. Which classnames count as spawns and objectives comes
+    from the profile, so this works for any game with a profile.
+
+    Distances are walked, not straight-line — a 500-unit gap with a wall in it is not 500 units.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    pid, err = _profile_or_error(profile_id)
+    if err:
+        return err
+    try:
+        return anamod.balance_report(SESSION.path, pid, cell=cell)
+    except (OSError, ValueError, MemoryError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def sightline_report(samples: int = 200, cell: float = 16, profile_id: str | None = None) -> dict:
+    """Sightline length distribution and power positions (§7.3).
+
+    Samples walkable positions, casts rays between them at the profile's eye height, and reports how
+    far a player can see. Long uncontested lanes are the finding that matters in a sniper-sensitive
+    game; "power positions" are the points that see the most of the map.
+
+    Sampled, so the numbers move a little between runs. Read the distribution, not any single value.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    pid, err = _profile_or_error(profile_id)
+    if err:
+        return err
+    try:
+        return anamod.sightline_report(SESSION.path, samples=samples, profile_id=pid, cell=cell)
+    except (OSError, ValueError, MemoryError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def movement_check(cell: float = 16, profile_id: str | None = None) -> dict:
+    """Check clearances against the profile's movement constants (§7.3).
+
+    Standing headroom, crouch headroom, step height, doorway widths. Every finding names the
+    constant it used and that constant's confidence, and **anything derived from an unverified
+    constant is reported as info, never an error**.
+
+    That clamp is not ceremony. The design document's own standing height was wrong by 13 units, and
+    a corridor sized from it would pass every geometric check while being unusable.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    pid, err = _profile_or_error(profile_id)
+    if err:
+        return err
+    try:
+        return anamod.movement_check(SESSION.path, pid, cell=cell)
+    except (OSError, ValueError, MemoryError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def spawn_safety(cell: float = 16, profile_id: str | None = None) -> dict:
+    """Exits per spawn and distance to the nearest enemy spawn (§7.3).
+
+    A spawn with one exit is a spawn that can be held; a spawn close to an enemy spawn is a spawn
+    that gets contested immediately. Both are design smells worth seeing before playtesting finds
+    them.
+    """
+    if SESSION.path is None:
+        return {"error": "no map is open"}
+    pid, err = _profile_or_error(profile_id)
+    if err:
+        return err
+    try:
+        return anamod.spawn_safety(SESSION.path, pid, cell=cell)
+    except (OSError, ValueError, MemoryError) as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
 # Project / meta
 # ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def bench_run() -> dict:
+    """Run the fitness suite and return the scores (§11.1).
+
+    F1 (kernel correctness) is a **gate**, not a score: a run with it red has no score to compare,
+    whatever the other signals say. F4 skips without a compiler and F5 is a declarative proxy for
+    the natural-language-brief version; both say so in their output rather than reporting a number
+    they cannot justify.
+
+    Also reports whether the protected paths are unchanged. If they are not, treat every score as
+    meaningless — §11.4 names editing the ruler as the most likely failure mode of any
+    optimization loop.
+    """
+    r = run_mise_task("bench")
+    root = repo_root()
+    results = sorted((root / "bench" / "results").glob("*.json"), key=lambda p: p.stat().st_mtime)
+    if not results:
+        return {"error": "bench produced no result file", "output": r["stdout"][-1500:]}
+    import json as _json
+
+    data = _json.loads(results[-1].read_text())
+    return {
+        "sha": data["sha"],
+        "dirty": data["dirty"],
+        "gate_passed": data["gate_passed"],
+        "protected_paths_ok": data["protected_paths_ok"],
+        "protected_problems": data["protected_problems"],
+        "signals": [{k: v for k, v in s.items() if k not in ("cases",)} for s in data["signals"]],
+        "result_file": str(results[-1].relative_to(root)),
+    }
+
+
+@mcp.tool()
+def upstream_diff(fetch: bool = False) -> dict:
+    """Report upstream drift that would break the editor bridge (§10.1).
+
+    Hashes the individual declarations in `include/` the plugin binds to, rather than whole files,
+    so it fires when something the plugin calls has actually moved instead of on every comment
+    change. Also reports new or removed compiler flags, because each new flag is a potential
+    optimizer capability (§6) — that feed pays for itself even if the pull request never happens.
+    """
+    args = ["--fetch"] if fetch else []
+    r = run_mise_task("pr:watch" if fetch else "pr:baseline", args)
+    return {
+        "ok": r["ok"],
+        "output": r["stdout"] or r["stderr"],
+        "note": (
+            "a breaking change deliberately does not advance the baseline, so it keeps being "
+            "reported until it is dealt with"
+        ),
+    }
+
+
+@mcp.tool()
+def pr_plan_status() -> dict:
+    """Regenerate and summarize the upstream contribution plan (§10.2).
+
+    Every number is measured, not asserted. The three criteria that cannot be met from here — never
+    compiled, no usage telemetry, no maintainer asked — are reported as unmet rather than glossed,
+    and the telemetry one matters most: §10.1's rule is that any RPC method with zero real-session
+    usage is cut before submission, so inventing those numbers would defeat the feed's purpose.
+    """
+    r = run_mise_task("pr:report")
+    plan = repo_root() / "docs" / "pr-plan.md"
+    return {
+        "ok": r["ok"],
+        "plan": str(plan),
+        "summary": r["stdout"].strip(),
+        "content": plan.read_text() if plan.is_file() else None,
+    }
+
+
+@mcp.tool()
+def selfdev_protected() -> dict:
+    """List the paths self-modification may never touch, and verify their hash pins (§11.4).
+
+    Read-only, and available whether or not self-dev is enabled: knowing what is frozen is useful
+    on its own. §11.4 calls this mechanism "the only thing standing between self-improving and
+    self-congratulating".
+    """
+    r = run_mise_task("selfdev:status")
+    return {"ok": r["ok"], "status": r["stdout"] or r["stderr"]}
 
 
 @mcp.tool()
@@ -1108,6 +1460,18 @@ def resource_profile(profile_id: str) -> str:
     return path.read_text()
 
 
+@mcp.resource("nrc://conventions")
+def resource_conventions() -> str:
+    """The design tier rules and authoring guidance (§4.3).
+
+    Read this before authoring geometry. It says which representation to use and why, what to caulk,
+    the authoring order, the composition patterns that work — and what is not built yet, which saves
+    more time than it costs.
+    """
+    p = repo_root() / "docs" / "conventions.md"
+    return p.read_text() if p.is_file() else "docs/conventions.md is missing"
+
+
 @mcp.resource("nrc://corrections")
 def resource_corrections() -> str:
     """Design claims that turned out to be wrong when verified against real sources.
@@ -1178,6 +1542,21 @@ TOOL_NAMES = (
     "model_import",
     "model_place",
     "model_make_clip",
+    "structural_audit",
+    "hint_suggest",
+    "leak_trace",
+    "shader_audit",
+    "compile_ab",
+    "ab_history",
+    "navgrid_stats",
+    "balance_report",
+    "sightline_report",
+    "movement_check",
+    "spawn_safety",
+    "bench_run",
+    "upstream_diff",
+    "pr_plan_status",
+    "selfdev_protected",
     "task_list",
     "task_run",
     "compile_map",
@@ -1197,14 +1576,19 @@ def describe_surface() -> str:
         "RESOURCES",
         "  nrc://tasks                the live mise task list",
         "  nrc://profile/{id}         a game profile as YAML",
+        "  nrc://conventions          design tiers, caulk, authoring order, what is not built",
         "  nrc://corrections          verified corrections to the design document",
         "  map://current/summary      the open map",
         "",
         f"active profile: {active_profile() or '(none)'}",
         f"profiles available: {', '.join(profiles.available()) or 'none'}",
         "",
-        "NOT YET IMPLEMENTED (spec sections): §6 optimization suite, §7.3 UrT analysis,",
-        "§9 editor bridge, §11 self-optimization.",
+        "NOT BUILT: patch authoring (§4 tier 3), the dimension corpus (§4.3), cover_report (§7.3).",
+        "",
+        "The editor bridge (§9) exists at contrib/mcpbridge but has never been compiled, so it is",
+        "not reachable from here. Kernel self-modification (§11) is gated behind human review",
+        "indefinitely and deliberately not automated; the prompt-layer loop is opt-in via",
+        "NRC_SELFDEV=1.",
     ]
     try:
         lines.append(f"mise tasks discovered: {len(tasks.list_tasks())}")

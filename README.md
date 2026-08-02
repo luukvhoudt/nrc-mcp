@@ -7,7 +7,7 @@ first.
 `nrc-mcp` owns the `.map`. It parses and writes the file losslessly, derives geometry with
 exact arithmetic, drives `q3map2`, and exposes all of it over MCP.
 
-**Status: phases 0–5 complete and verified.** See
+**Status: all ten phases implemented; see the table for what each one does and does not include.** See
 [Status](#status) for exactly what exists. The design document is
 `netradiant-mcp-spec.md`; the claims in it that did not survive verification are recorded in
 [`docs/spec-corrections.md`](docs/spec-corrections.md) — **read that before trusting a rule
@@ -154,7 +154,11 @@ profile itself, so it cannot fall behind.
 | 3 | q3map2 driver, `bsp_report`, packaging, profile validators | **done** — declarative rule engine, BSP introspection, `ship_check` |
 | 4 | Solid IR, sculpting tools, convex decomposition | **done** — a doorway compiles to exactly three brushes |
 | 5 | Blender handoff: brief, import validation, collision hull | **done** — the metres/inches error is named, not just measured |
-| 6–10 | Optimization, analysis, editor bridge, self-optimization | in progress |
+| 6 | Optimization suite | **done** — structural audit, hint suggestion, leak trace, shader audit, A/B compiles |
+| 7 | UrT analysis: navmesh, balance, sightlines, movement | **done** — all constants read from the profile |
+| 8 | Editor bridge + upstream PR machinery | **partial** — the plugin exists and is pushed to a fork branch, but has never been compiled |
+| 9 | Fitness suite + self-optimization on the prompt layer | **done** — F1–F6, protected paths, opt-in loop |
+| 10 | Self-optimization of the kernel; living PR plan | **deliberately not done for the kernel** — §11.4 gates it behind human review indefinitely. The PR plan generates itself. |
 
 Implemented: all three texdef conventions (axial, brush primitives, Valve 220), `patchDef2`
 and `patchDef3`, verbatim preservation of unknown primitives, exact brush hulls, 13 geometry

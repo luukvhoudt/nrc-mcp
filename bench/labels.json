@@ -1,0 +1,80 @@
+{
+  "note": "Ground truth for F3. `expect` lists finding codes that must appear; `clean` marks a map that must produce no errors. Generated cases come from tools/gen_corpus.py, which builds each one for a named defect, so the labels are not opinions.",
+  "maps": {
+    "corpus/synthetic/degenerate/too_few_faces.map": {
+      "expect": [
+        "BRUSH_DEGENERATE"
+      ]
+    },
+    "corpus/synthetic/degenerate/mirrored_plane.map": {
+      "expect": [
+        "BRUSH_MIRRORED_PLANE"
+      ]
+    },
+    "corpus/synthetic/degenerate/duplicate_plane.map": {
+      "expect": [
+        "BRUSH_DUPLICATE_PLANE"
+      ]
+    },
+    "corpus/synthetic/degenerate/redundant_plane.map": {
+      "expect": [
+        "BRUSH_REDUNDANT_PLANE"
+      ]
+    },
+    "corpus/synthetic/degenerate/off_grid.map": {
+      "expect": [
+        "BRUSH_NOT_EXACT"
+      ]
+    },
+    "corpus/synthetic/degenerate/out_of_bounds.map": {
+      "expect": [
+        "COORD_OUT_OF_BOUNDS"
+      ]
+    },
+    "corpus/synthetic/degenerate/collinear_face.map": {
+      "expect": [
+        "BRUSH_DEGENERATE"
+      ]
+    },
+    "corpus/synthetic/degenerate/no_worldspawn.map": {
+      "expect": [
+        "MAP_NO_WORLDSPAWN"
+      ]
+    },
+    "corpus/synthetic/degenerate/patch_dims_mismatch.map": {
+      "expect": [
+        "PATCH_DIMENSIONS_INCONSISTENT"
+      ]
+    },
+    "corpus/synthetic/degenerate/patch_def3_unreadable.map": {
+      "expect": [
+        "PATCH_DEF3_UNREADABLE"
+      ]
+    },
+    "corpus/synthetic/degenerate/unknown_primitive.map": {
+      "expect": [
+        "PRIMITIVE_NOT_UNDERSTOOD"
+      ]
+    },
+    "corpus/synthetic/degenerate/thin_brush.map": {
+      "expect": [
+        "BRUSH_THIN"
+      ]
+    },
+    "corpus/synthetic/roundtrip/axial_room.map": {
+      "clean": true
+    },
+    "corpus/synthetic/roundtrip/brush_primitives.map": {
+      "clean": true
+    },
+    "corpus/synthetic/roundtrip/valve220.map": {
+      "clean": true
+    },
+    "corpus/synthetic/roundtrip/patch_def2.map": {
+      "clean": true
+    },
+    "corpus/synthetic/roundtrip/entity_forms.map": {
+      "clean": true
+    }
+  }
+}
