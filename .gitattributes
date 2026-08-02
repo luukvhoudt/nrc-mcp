@@ -16,6 +16,12 @@
 
 *.rs    text eol=lf
 *.py    text eol=lf
+# C and C++ too: the editor plugin under contrib/ is destined for upstream, whose
+# .editorconfig requires LF. Without these three lines a checkout on a machine with
+# core.autocrlf=true materialises them as CRLF and the first upstream diff is every line.
+*.c     text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
 *.toml  text eol=lf
 *.yaml  text eol=lf
 *.yml   text eol=lf

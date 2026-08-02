@@ -819,9 +819,18 @@ def asset_plan(
         )
     if is_curved and not is_organic:
         return _tier(3, "patch", "curved but simple, so a patch — and a patch is never structural")
+    # The model entity's classname is game-specific, so it comes from the profile. The seam lint
+    # caught this line naming it directly, which is exactly the drift §7.4 predicts.
+    entity = "a model entity"
+    pid = active_profile()
+    if pid:
+        try:
+            entity = str((profiles.load(pid).get("assets") or {}).get("model_entity") or entity)
+        except profiles.ProfileError:
+            pass
     return _tier(
         4,
-        "mesh via misc_model",
+        f"mesh, placed with {entity}",
         "ornament, clutter or organic geometry, which is what Blender is for; always "
         "non-structural, so pair it with an explicit collision decision",
     )

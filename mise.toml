@@ -281,6 +281,10 @@ run         = "uv run python tools/protected.py --verify"
 # pr:* — the living PR plan (§10)
 # ---------------------------------------------------------------------------
 
+[tasks."pr:sync-bridge"]
+description = "Mirror contrib/mcpbridge into a netradiant-custom checkout for the PR (§9.3)"
+run         = "uv run python tools/sync_bridge.py"
+
 [tasks."pr:watch"]
 description = "Poll upstream for drift; hash include/*.h signatures the bridge binds to (§10.1)"
 run         = "uv run python tools/pr_watch.py --state docs/upstream-state.json"
