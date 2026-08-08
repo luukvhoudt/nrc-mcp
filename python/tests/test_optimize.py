@@ -903,7 +903,12 @@ def test_compile_ab_drives_the_real_compiler(tmp_path):
     if not (out["a"]["ok"] and out["b"]["ok"]):
         pytest.skip("q3map2 could not compile the fixture on this machine")
 
-    assert out["a"]["counts"]["draw_surfaces"] > 0
+    # Proof that real counts were read, without assuming the fixture draws anything:
+    # `axial_room.map` is caulk on every face, and the compiler discards caulk, so
+    # `draw_surfaces` is legitimately 0 here. Brushes and planes survive regardless.
+    assert out["a"]["counts"]["brushes"] > 0
+    assert out["a"]["counts"]["planes"] > 0
+    assert out["a"]["bsp_bytes"] > 0
     for metric in ("draw_surfaces", "leafs", "brushes", "planes"):
         assert out["deltas"][metric]["change"] == 0, metric
     assert out["deltas"]["bsp_bytes"]["change"] == 0

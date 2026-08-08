@@ -1,0 +1,82 @@
+{
+  "name": "improve-engine-performance",
+  "note": "The optimisation pass: find out what is costing compile time and runtime visibility, and confirm the map is still the same map. HONEST LIMIT \u2014 this tape covers the measuring half only. Marking a brush detail, the change structural_audit exists to recommend, has no tool on the MCP surface, so nothing here applies a fix. When that tool lands, this tape gains the apply step and a compile_ab that proves the surfaces went down.",
+  "fixture": "corpus/real/ut4_woolis.map",
+  "steps": [
+    {
+      "tool": "map_open",
+      "as": "open",
+      "args": {
+        "path": "{work}"
+      },
+      "expect": {
+        "round_trip.identical": true
+      }
+    },
+    {
+      "tool": "structural_audit",
+      "as": "audit",
+      "args": {
+        "grid": 8
+      },
+      "expect": {
+        "totals.structural_brushes": {
+          "$gte": 1
+        },
+        "totals.candidates": {
+          "$gte": 1
+        },
+        "estimated_portal_reduction_total": {
+          "$gte": 1
+        }
+      }
+    },
+    {
+      "tool": "map_stats",
+      "as": "stats",
+      "args": {},
+      "expect": {
+        "structural_brushes": {
+          "$gte": 1
+        }
+      }
+    },
+    {
+      "tool": "shader_audit",
+      "as": "shaders",
+      "args": {},
+      "continue_on_mismatch": true
+    },
+    {
+      "tool": "map_save",
+      "as": "save",
+      "args": {},
+      "expect": {
+        "written": true,
+        "modified_since_open": false
+      }
+    }
+  ],
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "no_playable_space_regression",
+      "args": {
+        "max_lost_fraction": 0.0
+      }
+    },
+    {
+      "name": "tool_result",
+      "args": {
+        "step": "audit",
+        "path": "summary.error",
+        "equals": 0
+      }
+    },
+    {
+      "name": "map_seals"
+    }
+  ]
+}

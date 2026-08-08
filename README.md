@@ -4,7 +4,7 @@ An MCP server for designing, sculpting, optimizing and shipping levels for
 [NetRadiant-custom](https://github.com/Garux/netradiant-custom), targeting Urban Terror.
 
 `nrc-mcp` owns the `.map` file. It parses and writes it losslessly, derives geometry with exact
-arithmetic, drives `q3map2`, and exposes all of it to an agent as **47 tools and 5 resources**.
+arithmetic, drives `q3map2`, and exposes all of it to an agent as **48 tools and 5 resources**.
 A human gets the same capabilities through a CLI and a set of `mise` tasks.
 
 It is not an editor and not a plugin. It reads and writes the same files NetRadiant does, so you can
@@ -69,7 +69,7 @@ mise run test                 # prove it works before trusting anything
 GATE GREEN
 ```
 
-Alongside 265 Rust tests and 248 Python tests. The `semantic` line only appears if a compiler is
+Alongside 265 Rust tests, 272 Python tests and 5 scenario tapes. The `semantic` line only appears if a compiler is
 configured; without one it is skipped, not failed.
 
 **If the gate is red, stop.** Nothing downstream of the kernel is trustworthy while a map does not
@@ -281,7 +281,7 @@ structural brushes generate portals, and most brushes do not need to be structur
 
 ## Tool reference
 
-47 tools. `mise run mcp:tools` prints this list live.
+48 tools. `mise run mcp:tools` prints this list live.
 
 **The map**
 
@@ -289,7 +289,7 @@ structural brushes generate portals, and most brushes do not need to be structur
 | --- | --- |
 | `map_open` | Open a `.map` for analysis. Everything else works on it. |
 | `map_stats` | Counts, bounds, shader histogram, grid alignment. |
-| `map_save` | Write it back, byte-identically where untouched. |
+| `map_save` | Write it back. Refuses if the map did not round-trip when opened, or if the write would destroy playable space. |
 | `query_entities` | Entities, filterable by classname. |
 | `brush_geometry` | Exact vertices and derived properties of one brush. |
 | `validate` | Geometry and file-format findings. |
@@ -347,6 +347,7 @@ structural brushes generate portals, and most brushes do not need to be structur
 | `sightline_report` | Sightline length distribution and power positions. |
 | `movement_check` | Clearances against verified movement constants. |
 | `spawn_safety` | Exits per spawn, and distance to the nearest enemy spawn. |
+| `playable_space_diff` | What an edit did to the space a player can stand in. |
 
 **Shipping**
 
@@ -402,11 +403,12 @@ Every capability is a mise task, and the task list is the agent's action surface
 agent did is a command you can paste into a shell.
 
 ```sh
-mise tasks                       # all 41
+mise tasks                       # all 42
 mise run info                    # resolved paths and versions
 mise run render corpus/real/ut4_dofa.map out/dofa.png
 mise run compile:draft maps/mymap.map
 mise run test:diff               # the round-trip gate alone
+mise run test:tapes              # end-to-end scenarios over the MCP surface
 mise run bench                   # the fitness suite
 mise run watch                   # re-run checks on change
 ```
@@ -449,6 +451,23 @@ untouched map reproduces its own bytes and a modified one differs only where it 
 Comments, key order, duplicate keys, line endings, layer records and primitives whose syntax is
 unrecognized all survive.
 
+**Two gates, guarding two different things.** The round-trip gate protects the *file*. It says
+nothing about the *map*, and for a long time nothing did: an edit could fill a room with
+playerclip and every check stayed green — it round-tripped, validated, compiled and sealed, and
+was unplayable. `map_save` now also compares the map it is about to write against the file it is
+about to replace, and refuses on either of two findings that have no legitimate form:
+
+- `PLAYSPACE_INTERIOR_SEALED_BY_CLIP` — floor that had a ceiling over it is now inside a clip
+  volume. A roof is sky-exposed by definition, so this is the inside of the map being closed off,
+  and clip is what makes it invisible until someone walks into it.
+- `PLAYSPACE_CLIP_SURFACE_WALKABLE` — you can now stand on top of a clip volume, held up by
+  nothing else. Capping something with clip does not remove the surface, it raises it.
+
+Sealing floor with ordinary geometry is a warning, not an error: putting a wall in a room is
+authoring, and a gate that blocks every real edit is a gate that gets switched off. Pass
+`acknowledge_regression=true` when you meant it. `playable_space_diff` runs the same comparison
+on demand, between any two maps.
+
 **Exact predicates, or an honest refusal.** Coplanarity, convexity, plane identity and grid
 membership use integer and rational arithmetic, not epsilons. Brush vertices come from intersecting
 every triple of face planes exactly and keeping the points that satisfy every half-space, so
@@ -481,7 +500,9 @@ crates/nrc-render/   headless rasterizer: ortho and perspective, PNG out, no GPU
 crates/nrc-cli/      `nrc` — roundtrip / stats / validate / normalize / render
 crates/nrc-py/       PyO3 bindings; the server's in-process kernel
 python/src/nrc_mcp/  the MCP server
-tools/               corpus import, the differential harness, the q3map2 driver, the seam lint
+tools/               corpus import, the differential harness, the q3map2 driver, the seam lint,
+                     the scenario-tape runner
+bench/tapes/         end-to-end scenarios: tool sequence in, invariants out
 profiles/            game profiles — the only game-specific layer
 corpus/              real, upstream-regression and synthetic maps
 contrib/mcpbridge/   an editor plugin for live editor state (never compiled — see docs/)
@@ -524,6 +545,14 @@ corridor sized from the wrong number passes every geometric check and still trap
 and **it has never been compiled** — there is no Qt5 environment here and the host compiler cannot
 build that codebase at all. It is offered for review, not for use. `docs/editor-bridge.md` explains
 the design; `docs/pr-plan.md` tracks readiness and reports this as unmet.
+
+**No model-in-the-loop test.** `mise run test:tapes` runs five scenarios end to end — build from
+scratch, continue an existing level, refactor one region, an optimisation pass, and one negative
+control that reproduces the `ut4_dofa` clip failure and requires `map_save` to refuse it. Every
+step is a real call into the server. What none of them prove is that a *model* would make those
+calls: the tape is the tool sequence with the model removed, which is exactly why it costs
+nothing to run. Closing that gap means a model driving this MCP against small fixtures, graded by
+the same invariants, and it is not built. `bench/tapes/README.md` says the same thing at length.
 
 **No kernel self-modification.** The exact predicates, the differential harness, the fitness
 definitions, the corpus and every verified rule are hash-pinned in `bench/protected.json`. The

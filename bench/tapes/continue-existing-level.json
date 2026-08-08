@@ -1,0 +1,87 @@
+{
+  "name": "continue-existing-level",
+  "note": "Open a finished map and add to it. The case that went wrong on ut4_dofa: the new work must not cost the old work any playable space.",
+  "fixture": "corpus/real/ut4_woolis.map",
+  "steps": [
+    {
+      "tool": "map_open",
+      "as": "open",
+      "args": {
+        "path": "{work}"
+      },
+      "expect": {
+        "round_trip.identical": true
+      }
+    },
+    {
+      "tool": "map_stats",
+      "as": "before",
+      "args": {},
+      "expect": {
+        "brushes": {
+          "$gte": 1
+        }
+      }
+    },
+    {
+      "tool": "solid_commit",
+      "as": "annex",
+      "args": {
+        "label": "annex",
+        "textures": {
+          "default": "common/caulk"
+        },
+        "ir": {
+          "op": "hollow",
+          "solid": {
+            "op": "box",
+            "min": [
+              -1024,
+              -512,
+              0
+            ],
+            "max": [
+              -512,
+              0,
+              256
+            ]
+          },
+          "thickness": 16
+        }
+      },
+      "expect": {
+        "brushes_created": 6
+      }
+    },
+    {
+      "tool": "map_save",
+      "as": "save",
+      "args": {},
+      "expect": {
+        "written": true,
+        "playable_space.summary.error": 0,
+        "playable_space.walkable_on_clip_cells": 0
+      }
+    }
+  ],
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "no_playable_space_regression",
+      "args": {
+        "max_lost_fraction": 0.01
+      }
+    },
+    {
+      "name": "no_clip_surface_walkable"
+    },
+    {
+      "name": "no_new_validation_errors"
+    },
+    {
+      "name": "map_seals"
+    }
+  ]
+}

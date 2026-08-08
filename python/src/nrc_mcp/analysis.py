@@ -528,6 +528,10 @@ class Solid:
     primitive: int
     is_box: bool
     approximated: bool
+    #: The shaders on this brush's faces, so a caller can ask *what kind* of solid stopped
+    #: the player. Carried rather than re-read, because the only other way to answer
+    #: "is this cell held up by a clip brush" is a second pass over the map.
+    shaders: tuple[str, ...] = ()
 
     def contains(self, x: float, y: float, z: float) -> bool:
         if not (
@@ -749,6 +753,7 @@ def collect_solids(
                     primitive=primitive - 1,
                     is_box=box,
                     approximated=approximated,
+                    shaders=tuple(shaders),
                 )
             )
             provenance["brushes_used"] += 1
@@ -1192,8 +1197,15 @@ def build_navgrid(
     max_cells: int = MAX_CELLS,
     max_hull_vertices: int = MAX_HULL_VERTICES,
     bucket: float = DEFAULT_BUCKET,
+    game_map: Any = None,
 ) -> NavGrid:
     """Voxelize a map into a walkable grid.
+
+    `game_map` voxelizes an already-parsed map instead of re-reading `map_path` from disk.
+    That is what lets a caller compare the map it is holding against the file it is about to
+    overwrite: without it, "after" would have to be written before it could be measured, which
+    is the wrong order for a check whose job is to decide whether to write at all. `map_path`
+    is still used to label the result and to word errors.
 
     A cell is **solid** when its centre is inside any brush, and **walkable** when it is empty,
     the cell below it is solid, and there is at least the profile's `headroom_stand` of clear
@@ -1220,7 +1232,8 @@ def build_navgrid(
         raise AnalysisError(f"cell size must be positive, got {cell}")
 
     path = _resolve_map_path(map_path)
-    game_map = load_map(path)
+    if game_map is None:
+        game_map = load_map(path)
     role_map = roles(profile)
     solids, provenance = collect_solids(game_map, role_map, max_hull_vertices=max_hull_vertices)
     if not solids:

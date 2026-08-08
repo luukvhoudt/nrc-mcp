@@ -1,0 +1,179 @@
+{
+  "name": "build-from-scratch",
+  "note": "Start from a bare ground slab and author a two-room block: hollow a shell, cut a doorway through it, put a second room beside it. The shape of a first session.",
+  "fixture": "bench/tapes/fixtures/seed_slab.map",
+  "steps": [
+    {
+      "tool": "map_open",
+      "as": "open",
+      "args": {
+        "path": "{work}"
+      },
+      "expect": {
+        "round_trip.identical": true,
+        "brushes": 1
+      }
+    },
+    {
+      "tool": "solid_compile",
+      "as": "preview_room",
+      "args": {
+        "ir": {
+          "op": "hollow",
+          "solid": {
+            "op": "box",
+            "min": [
+              0,
+              0,
+              0
+            ],
+            "max": [
+              512,
+              512,
+              256
+            ]
+          },
+          "thickness": 16
+        }
+      },
+      "expect": {
+        "brushes": 6
+      }
+    },
+    {
+      "tool": "solid_commit",
+      "as": "west_room",
+      "args": {
+        "label": "west_room",
+        "textures": {
+          "default": "common/caulk"
+        },
+        "ir": {
+          "op": "subtract",
+          "from": {
+            "op": "hollow",
+            "solid": {
+              "op": "box",
+              "min": [
+                0,
+                0,
+                0
+              ],
+              "max": [
+                512,
+                512,
+                256
+              ]
+            },
+            "thickness": 16
+          },
+          "cut": [
+            {
+              "op": "box",
+              "min": [
+                488,
+                192,
+                16
+              ],
+              "max": [
+                528,
+                320,
+                128
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "brushes_created": {
+          "$gte": 6
+        }
+      }
+    },
+    {
+      "tool": "solid_commit",
+      "as": "east_room",
+      "args": {
+        "label": "east_room",
+        "textures": {
+          "default": "common/caulk"
+        },
+        "ir": {
+          "op": "subtract",
+          "from": {
+            "op": "hollow",
+            "solid": {
+              "op": "box",
+              "min": [
+                512,
+                0,
+                0
+              ],
+              "max": [
+                1024,
+                512,
+                256
+              ]
+            },
+            "thickness": 16
+          },
+          "cut": [
+            {
+              "op": "box",
+              "min": [
+                496,
+                192,
+                16
+              ],
+              "max": [
+                536,
+                320,
+                128
+              ]
+            }
+          ]
+        }
+      },
+      "expect": {
+        "brushes_created": {
+          "$gte": 6
+        }
+      }
+    },
+    {
+      "tool": "map_save",
+      "as": "save",
+      "args": {},
+      "expect": {
+        "written": true,
+        "modified_since_open": true
+      }
+    }
+  ],
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "walkable_area_at_least",
+      "args": {
+        "cells": 200
+      }
+    },
+    {
+      "name": "single_walkable_region",
+      "args": {
+        "min_fraction": 0.9
+      }
+    },
+    {
+      "name": "no_clip_surface_walkable"
+    },
+    {
+      "name": "map_seals"
+    },
+    {
+      "name": "validates_clean"
+    }
+  ]
+}

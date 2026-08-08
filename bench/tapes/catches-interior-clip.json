@@ -1,0 +1,83 @@
+{
+  "name": "catches-interior-clip",
+  "note": "The ut4_dofa failure, reproduced small. A pass that meant to make roofs unreachable filled the inside of the buildings with playerclip instead: the map still compiled, still sealed, still validated, and the shopping mall had become an invisible wall. Here a clip volume is committed into a room that has a ceiling over it, and map_save must REFUSE. A tape that expects failure is the only kind that proves a guard is load-bearing \u2014 remove the guard and this tape goes red.",
+  "fixture": "bench/tapes/fixtures/interior_room.map",
+  "steps": [
+    {
+      "tool": "map_open",
+      "as": "open",
+      "args": {
+        "path": "{work}"
+      },
+      "expect": {
+        "round_trip.identical": true,
+        "brushes": 7
+      }
+    },
+    {
+      "tool": "solid_commit",
+      "as": "roof_clip",
+      "args": {
+        "label": "roof_clip",
+        "textures": {
+          "default": "common/playerclip"
+        },
+        "ir": {
+          "op": "box",
+          "min": [
+            16,
+            16,
+            16
+          ],
+          "max": [
+            496,
+            496,
+            112
+          ]
+        }
+      },
+      "expect": {
+        "brushes_created": 1
+      }
+    },
+    {
+      "tool": "map_save",
+      "as": "blocked_save",
+      "args": {},
+      "expect": {
+        "written": false,
+        "playable_space.findings.0.code": "PLAYSPACE_INTERIOR_SEALED_BY_CLIP",
+        "playable_space.findings.0.severity": "error",
+        "playable_space.interior_sealed_by_clip_cells": {
+          "$gte": 100
+        },
+        "playable_space.walkable_on_clip_cells": {
+          "$gte": 100
+        }
+      }
+    },
+    {
+      "tool": "map_save",
+      "as": "acknowledged_save",
+      "args": {
+        "acknowledge_regression": true
+      },
+      "expect": {
+        "written": true
+      }
+    }
+  ],
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "tool_result",
+      "args": {
+        "step": "blocked_save",
+        "path": "written",
+        "equals": false
+      }
+    }
+  ]
+}

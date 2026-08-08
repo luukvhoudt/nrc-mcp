@@ -196,9 +196,17 @@ run         = "uv run pytest python/tests/test_validators.py -q"
 description = "Portability lint: fail if UrT-specific strings leak outside profiles/ + corpus/ (§7.4)"
 run         = "uv run python tools/seam_lint.py"
 
+[tasks."test:tapes"]
+description = "Scenario tapes — end-to-end over the MCP surface, no model, no tokens"
+depends     = ["kernel:build"]
+# No usage spec: mise forwards whatever follows `--` straight to the runner, so
+# `mise run test:tapes -- --tape build-from-scratch -v` works without restating its flags
+# here and letting the two drift apart.
+run         = "uv run python tools/tapes.py"
+
 [tasks.test]
 description = "Full test suite"
-depends     = ["test:unit", "test:diff", "test:validators", "test:seam"]
+depends     = ["test:unit", "test:diff", "test:validators", "test:seam", "test:tapes"]
 run         = "echo 'all green'"
 
 [tasks.ci]

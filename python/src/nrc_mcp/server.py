@@ -47,6 +47,7 @@ from . import blender as blendermod
 from . import bsp as bspmod
 from . import optimize as optmod
 from . import pack as packmod
+from . import playspace as playspacemod
 from . import profiles, rules, solids, tasks
 from .kernel import KernelUnavailable, load_map, repo_root, run_mise_task
 
@@ -61,6 +62,13 @@ class Session:
     path: Path | None = None
     grid: int = 8
     warnings: list[str] = field(default_factory=list)
+    #: The round-trip result taken at `map_open`, before anything could edit the map.
+    #:
+    #: This, not the live one, is the gate. Once a tool has added a brush the live check
+    #: differs by construction — that is the edit — and reading it as a kernel failure made
+    #: `map_save` refuse every real change and taught callers to pass the override every
+    #: time, which switched the guard off for the case it exists to catch.
+    opened_round_trip: dict | None = None
 
     def require(self):
         if self.map is None:
@@ -112,6 +120,7 @@ def map_open(path: str, grid: int = 8) -> dict:
     SESSION.warnings = []
 
     rt = m.round_trip()
+    SESSION.opened_round_trip = rt
     if not rt["identical"]:
         SESSION.warnings.append(
             "this map does not round-trip byte-identically; map_save will refuse to write"
@@ -144,30 +153,101 @@ def map_stats(grid: int | None = None) -> dict:
 
 
 @mcp.tool()
-def map_save(path: str | None = None, allow_non_identical: bool = False) -> dict:
-    """Write the open map back to disk.
+def map_save(
+    path: str | None = None,
+    allow_non_identical: bool = False,
+    check_playable_space: bool = True,
+    acknowledge_regression: bool = False,
+) -> dict:
+    """Write the open map back to disk, if it is safe to.
 
-    Refuses if the kernel cannot reproduce the loaded bytes, unless
-    `allow_non_identical` is set. That guard is the point: a round-trip failure means the
-    kernel misunderstands something in the file, and writing anyway risks silently
-    discarding it.
+    Two gates, guarding two different things.
+
+    **The file.** If the kernel could not reproduce the bytes it *loaded*, it misunderstands
+    something in this file and writing would silently discard it. That check is taken at
+    `map_open` and it is the one enforced here. A difference introduced since then is your
+    edit, not a kernel failure, and does not block the write.
+
+    **The map.** The write is compared against the file it is about to replace, and refused
+    if it destroys playable space — an interior floor sealed off, or a surface you can now
+    stand on top of a clip volume. Both are silent in every other check: the map still
+    compiles, still seals, still validates, and is unplayable. See `playable_space_diff` for
+    the same report on its own.
+
+    The comparison costs a second or two on a city-sized map. If it cannot be made at all —
+    a map too large to voxelize, or one with no evaluable brush — the write proceeds and
+    says so, because a check that cannot run has not found anything.
 
     Args:
         path: destination. Defaults to the file the map was opened from.
-        allow_non_identical: write even though the round-trip check failed.
+        allow_non_identical: write even though the map did not round-trip when it was opened.
+        check_playable_space: run the before/after comparison. Off skips it entirely.
+        acknowledge_regression: write anyway despite a playable-space error. Use it when you
+            meant to remove that space.
     """
     m = SESSION.require()
-    rt = m.round_trip()
-    if not rt["identical"] and not allow_non_identical:
+    opened = SESSION.opened_round_trip or m.round_trip()
+    current = m.round_trip()
+    edited = not current["identical"] and bool(opened["identical"])
+
+    if not opened["identical"] and not allow_non_identical:
         return {
             "written": False,
-            "reason": "the kernel cannot reproduce this file byte-for-byte, so writing it "
-            "could lose data. Inspect round_trip.first_difference, or pass "
-            "allow_non_identical=true if you accept the risk.",
-            "round_trip": rt,
+            "reason": "the kernel could not reproduce this file byte-for-byte when it was "
+            "opened, so writing it could lose data. Inspect round_trip.first_difference, or "
+            "pass allow_non_identical=true if you accept the risk.",
+            "round_trip": opened,
         }
+
+    playspace_report: dict | None = None
+    playspace_note: str | None = None
+    baseline = SESSION.path if SESSION.path and SESSION.path.is_file() else None
+    if check_playable_space and edited and baseline is not None:
+        try:
+            playspace_report = playspacemod.diff(baseline, (baseline, m))
+        except (anamod.AnalysisError, playspacemod.PlayspaceError) as e:
+            playspace_note = f"playable space could not be compared, so it was not checked: {e}"
+
+    if playspace_report is not None and playspacemod.has_errors(playspace_report):
+        if not acknowledge_regression:
+            return {
+                "written": False,
+                "reason": "this write would destroy playable space. Read the findings; if "
+                "you meant to remove it, pass acknowledge_regression=true.",
+                "playable_space": _playspace_brief(playspace_report),
+                "round_trip": current,
+            }
+        SESSION.warnings.append(
+            "wrote a map with a playable-space regression, acknowledged by the caller"
+        )
+
     written = m.save(path)
-    return {"written": True, "path": written, "round_trip": rt}
+    out: dict[str, Any] = {
+        "written": True,
+        "path": written,
+        "round_trip": current,
+        "modified_since_open": edited,
+    }
+    if playspace_report is not None:
+        out["playable_space"] = _playspace_brief(playspace_report)
+    if playspace_note:
+        out["playable_space_note"] = playspace_note
+    return out
+
+
+def _playspace_brief(report: dict) -> dict:
+    """The parts of a playable-space report worth putting in a save's answer."""
+    return {
+        "cell": report["cell"],
+        "walkable_before": report["before"]["walkable_cells"],
+        "walkable_after": report["after"]["walkable_cells"],
+        "lost_cells": report["lost_cells"],
+        "gained_cells": report["gained_cells"],
+        "interior_sealed_by_clip_cells": report["interior_sealed_by_clip_cells"],
+        "walkable_on_clip_cells": report["walkable_on_clip_cells"],
+        "findings": report["findings"],
+        "summary": report["summary"],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1274,6 +1354,48 @@ def spawn_safety(cell: float = 16, profile_id: str | None = None) -> dict:
 
 
 @mcp.tool()
+def playable_space_diff(
+    before: str,
+    after: str | None = None,
+    cell: float = playspacemod.DEFAULT_DIFF_CELL,
+    profile_id: str | None = None,
+) -> dict:
+    """Compare the space a player can stand in, between two versions of a map.
+
+    This is the check that no amount of validating, compiling or leak-testing performs: all
+    of those pass on a map whose streets have been filled with clip. Only a before/after
+    comparison sees it.
+
+    Two findings are errors rather than observations, because neither has a legitimate form:
+
+    - `PLAYSPACE_INTERIOR_SEALED` — floor that had a ceiling over it is no longer standable.
+      A roof is sky-exposed by definition, so this is the inside of the map being closed off.
+    - `PLAYSPACE_CLIP_SURFACE_WALKABLE` — you can now stand on top of a clip volume. Clip
+      stops the player, so capping something with clip does not remove the surface, it
+      raises it.
+
+    Args:
+        before: the earlier map.
+        after: the later map. Defaults to the map open in this session, including edits that
+            have not been written yet — which is how you check a change before committing it.
+        cell: voxel size. Coarser is faster and still comparable; both sides use the same one.
+        profile_id: game profile supplying the movement constants and clip shader names.
+    """
+    later: Any
+    if after is None:
+        m = SESSION.require()
+        if SESSION.path is None:
+            return {"error": "the open map has no path to compare against"}
+        later = (str(SESSION.path), m)
+    else:
+        later = after
+    try:
+        return playspacemod.diff(before, later, cell=cell, profile_id=profile_id)
+    except (anamod.AnalysisError, playspacemod.PlayspaceError) as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
 def bench_run() -> dict:
     """Run the fitness suite and return the scores.
 
@@ -1553,6 +1675,7 @@ TOOL_NAMES = (
     "sightline_report",
     "movement_check",
     "spawn_safety",
+    "playable_space_diff",
     "bench_run",
     "upstream_diff",
     "pr_plan_status",

@@ -1,0 +1,120 @@
+{
+  "name": "refactor-one-region",
+  "note": "Change one thing and nothing else. A shape is committed, then resized through solid_edit_param \u2014 the operation that exists so an edit is a parameter change rather than a re-authoring. The map must still be sound and the rest of it untouched.",
+  "fixture": "corpus/real/ut4_woolis.map",
+  "steps": [
+    {
+      "tool": "map_open",
+      "as": "open",
+      "args": {
+        "path": "{work}"
+      },
+      "expect": {
+        "round_trip.identical": true
+      }
+    },
+    {
+      "tool": "solid_commit",
+      "as": "store",
+      "args": {
+        "label": "store_room",
+        "textures": {
+          "default": "common/caulk"
+        },
+        "ir": {
+          "op": "hollow",
+          "solid": {
+            "op": "box",
+            "min": [
+              -1024,
+              -512,
+              0
+            ],
+            "max": [
+              -512,
+              0,
+              256
+            ]
+          },
+          "thickness": 16
+        }
+      },
+      "expect": {
+        "brushes_created": 6
+      }
+    },
+    {
+      "tool": "solid_list",
+      "as": "recorded",
+      "args": {},
+      "expect": {
+        "solids.store_room.brushes": 6
+      }
+    },
+    {
+      "tool": "solid_edit_param",
+      "as": "deepen_preview",
+      "args": {
+        "name": "store_room",
+        "path": "solid.max[1]",
+        "value": 256
+      },
+      "expect": {
+        "preview_only": true,
+        "after.bounds.max.1": 256,
+        "before.bounds.max.1": 0
+      }
+    },
+    {
+      "tool": "solid_edit_param",
+      "as": "deepen",
+      "args": {
+        "name": "store_room",
+        "path": "solid.max[1]",
+        "value": 256,
+        "preview_only": false
+      },
+      "expect": {
+        "preview_only": false,
+        "after.brushes": 6,
+        "after.bounds.max.1": 256
+      }
+    },
+    {
+      "tool": "solid_inspect",
+      "as": "after_edit",
+      "args": {
+        "name": "store_room"
+      },
+      "expect": {
+        "ir.solid.max.1": 256
+      }
+    },
+    {
+      "tool": "map_save",
+      "as": "save",
+      "args": {},
+      "expect": {
+        "written": true,
+        "playable_space.summary.error": 0
+      }
+    }
+  ],
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "no_new_validation_errors"
+    },
+    {
+      "name": "no_playable_space_regression",
+      "args": {
+        "max_lost_fraction": 0.01
+      }
+    },
+    {
+      "name": "no_clip_surface_walkable"
+    }
+  ]
+}
