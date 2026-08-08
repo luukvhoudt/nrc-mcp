@@ -165,6 +165,118 @@ def test_findings_clamp_to_the_confidence_of_the_constants_they_rest_on():
 
 
 # ---------------------------------------------------------------------------
+# Telling a rooftop from an interior, which is harder than it looks
+# ---------------------------------------------------------------------------
+
+PLAZA = Path("bench/scenarios/fixtures/plaza_building.map")
+ROOF = (384, 256, 256)
+INSIDE = (384, 256, 32)
+STREET = (832, 256, 0)
+
+
+@pytest.fixture
+def plaza(tmp_path: Path) -> Path:
+    """A plaza with one building, under a skybox — the shape of a real map."""
+    root = Path(__file__).resolve().parents[2]
+    dst = tmp_path / "work.map"
+    shutil.copyfile(root / PLAZA, dst)
+    dst.chmod(0o644)
+    return dst
+
+
+def _near(profile: str) -> float:
+    from nrc_mcp.analysis import movement_constants
+
+    return movement_constants(profile).headroom_stand.value * playspace.NEAR_CEILING_HEIGHTS
+
+
+def test_a_skybox_does_not_make_every_rooftop_an_interior():
+    """The bug this test exists for.
+
+    A sky brush is solid to the voxelizer, so "is there anything above this cell" answers yes
+    for every walkable cell in a sealed map — on `ut4_dofa`, all 27,965 of them. A rule built
+    on that question calls rooftops interiors and fires on exactly the roof clipping it was
+    written to allow. `_is_indoors` asks a different question; this pins the difference.
+    """
+    from nrc_mcp.analysis import build_navgrid
+
+    profile = _profile()
+    grid = build_navgrid(PLAZA, cell=32.0, profile_id=profile)
+    near = _near(profile)
+
+    for label, position in (("roof", ROOF), ("street", STREET)):
+        z = playspace._standable_near(grid, position, 32.0)
+        assert z is not None, f"{label} should be standable in the fixture"
+        cell = grid.cell_at((position[0], position[1], z))
+        assert playspace._ceiling_distance(grid, cell) is not None, (
+            f"the skybox should put something above the {label} — otherwise this fixture "
+            "does not reproduce the condition being tested"
+        )
+        assert playspace._is_indoors(grid, cell, near) is None, f"{label} read as indoors"
+
+    z = playspace._standable_near(grid, INSIDE, 32.0)
+    cell = grid.cell_at((INSIDE[0], INSIDE[1], z))
+    assert playspace._is_indoors(grid, cell, near) is not None, (
+        "the building interior read as outdoors"
+    )
+
+
+def _clip_case(map_path: Path, ir: dict, profile: str) -> tuple[dict, dict]:
+    srv.map_open(str(map_path))
+    srv.solid_commit(
+        ir=ir, label="clip", textures={"default": playspace.player_clip_shaders(profile)[0]}
+    )
+    saved = srv.map_save()
+    report = playspace.diff(PLAZA, (str(map_path), srv.SESSION.map), profile_id=profile)
+    return saved, report
+
+
+def test_clipping_a_roof_all_the_way_up_is_allowed(plaza: Path):
+    """The correct technique has to get through, or the gate is just an obstacle."""
+    saved, report = _clip_case(
+        plaza, {"op": "box", "min": [128, 128, 256], "max": [640, 384, 1024]}, _profile()
+    )
+    assert saved["written"] is True
+    assert not playspace.has_errors(report)
+    assert report["outdoor_cells_removed"] > 0, "the roof should have been removed"
+    assert report["interior_sealed_by_clip_cells"] == 0
+    assert report["walkable_on_clip_cells"] == 0
+
+
+def test_capping_a_roof_with_a_lid_is_refused(plaza: Path):
+    """The ut4_dofa technique. The lid does not remove the roof, it raises it."""
+    saved, report = _clip_case(
+        plaza, {"op": "box", "min": [128, 128, 256], "max": [640, 384, 384]}, _profile()
+    )
+    assert saved["written"] is False
+    codes = {f["code"] for f in report["findings"] if f["severity"] == "error"}
+    assert codes == {"PLAYSPACE_CLIP_SURFACE_WALKABLE"}
+    assert report["walkable_on_clip_cells"] > 0
+
+
+def test_clipping_the_building_interior_is_refused(plaza: Path):
+    """The ut4_dofa outcome, on a map where the roof is genuinely outdoors."""
+    saved, report = _clip_case(
+        plaza, {"op": "box", "min": [144, 144, 16], "max": [624, 368, 112]}, _profile()
+    )
+    assert saved["written"] is False
+    codes = {f["code"] for f in report["findings"] if f["severity"] == "error"}
+    assert "PLAYSPACE_INTERIOR_SEALED_BY_CLIP" in codes
+    assert report["interior_sealed_by_clip_cells"] > 0
+    assert report["outdoor_cells_removed"] == 0
+
+
+def test_the_position_invariants_read_the_fixture_correctly(plaza: Path):
+    check = playspace.Check(workspace=plaza.parent, current=plaza, profile_id=_profile(), cell=32.0)
+    assert playspace.run_invariant(
+        "positions_walkable", check, positions=[list(INSIDE), list(STREET)]
+    ).ok
+    assert playspace.run_invariant("positions_walkable", check, positions=[list(ROOF)]).ok
+    # The roof is standable before anything happens, which is what makes the scenario real.
+    assert not playspace.run_invariant("positions_not_walkable", check, positions=[list(ROOF)]).ok
+
+
+# ---------------------------------------------------------------------------
 # The save gate
 # ---------------------------------------------------------------------------
 
@@ -289,6 +401,40 @@ def test_every_tape_is_well_formed():
             assert spec["name"] in playspace.available(), (
                 f"{path.name}: unknown invariant {spec['name']!r}"
             )
+
+
+def test_every_tier2_scenario_is_well_formed():
+    """Tier 2 costs money, so its mistakes should be found by the free suite.
+
+    The goal invariant of each scenario has to be *false* on the untouched fixture, or the
+    scenario cannot tell success from doing nothing. `tools/tier2.py --check` verifies that
+    against a live server; this checks the parts that need no server.
+    """
+    root = Path(__file__).resolve().parents[2]
+    scenarios = sorted((root / "bench" / "scenarios").glob("*.json"))
+    assert scenarios, "expected Tier 2 scenarios in bench/scenarios"
+    for path in scenarios:
+        s = json.loads(path.read_text())
+        assert s.get("note"), f"{path.name} has no note"
+        assert s.get("prompt"), f"{path.name} has no prompt"
+        assert "{work}" in s["prompt"], f"{path.name}: the prompt never names the map"
+        assert s.get("invariants"), f"{path.name} grades nothing"
+        for spec in s["invariants"]:
+            assert spec["name"] in playspace.available(), (
+                f"{path.name}: unknown invariant {spec['name']!r}"
+            )
+        fixture = root / s["fixture"]
+        assert fixture.is_file(), f"{path.name}: missing fixture {s['fixture']}"
+
+
+def test_the_terse_and_careful_scenarios_differ_only_in_wording():
+    """The pair is the measurement. If the graders drift apart it stops being one."""
+    root = Path(__file__).resolve().parents[2] / "bench" / "scenarios"
+    careful = json.loads((root / "seal-the-roofs.json").read_text())
+    terse = json.loads((root / "seal-the-roofs-terse.json").read_text())
+    assert careful["fixture"] == terse["fixture"]
+    assert careful["invariants"] == terse["invariants"]
+    assert len(terse["prompt"]) < len(careful["prompt"])
 
 
 def test_the_regression_tape_expects_a_refusal():

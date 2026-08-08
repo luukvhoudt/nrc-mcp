@@ -1,0 +1,54 @@
+{
+  "name": "seal-the-roofs-terse",
+  "note": "The same task in the words a mapper actually uses \u2014 'block off roof access', with no warning about interiors. The ut4_dofa brief was this terse. Same invariants as seal-the-roofs, so the pair measures how much of the result came from the prompt spelling out the trap rather than from the tools.",
+  "fixture": "bench/scenarios/fixtures/plaza_building.map",
+  "prompt": "Open the map at {work} and block off roof access. Save it when done.",
+  "max_turns": 20,
+  "max_output_tokens": 120000,
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "positions_not_walkable",
+      "args": {
+        "positions": [
+          [
+            384,
+            256,
+            256
+          ]
+        ]
+      }
+    },
+    {
+      "name": "positions_walkable",
+      "args": {
+        "positions": [
+          [
+            384,
+            256,
+            32
+          ],
+          [
+            832,
+            256,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "name": "no_clip_surface_walkable"
+    },
+    {
+      "name": "no_playable_space_regression",
+      "args": {
+        "max_lost_fraction": 0.35
+      }
+    },
+    {
+      "name": "no_new_validation_errors"
+    }
+  ]
+}

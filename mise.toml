@@ -281,6 +281,14 @@ description = "Run the fitness suite and write bench/results/<sha>.json (§11.1)
 depends     = ["kernel:build"]
 run         = "uv run python tools/bench.py --all --out $NRC_BENCH_OUT"
 
+[tasks."bench:tier2"]
+description = "Tier 2: a model driving the MCP, graded by the tape invariants — COSTS TOKENS"
+depends     = ["kernel:build"]
+# `--with anthropic` keeps the SDK out of the lockfile: nothing in `mise run test` needs it,
+# and a dependency that only one opt-in task uses does not belong in everyone's environment.
+# Modes: --check (free), --estimate (one count_tokens call), --run (spends).
+run         = "uv run --with anthropic python tools/tier2.py"
+
 [tasks."selfdev:protected"]
 description = "Verify the hash pins on paths self-dev may not touch (§11.4)"
 run         = "uv run python tools/protected.py --verify"

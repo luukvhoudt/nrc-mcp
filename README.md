@@ -409,6 +409,7 @@ mise run render corpus/real/ut4_dofa.map out/dofa.png
 mise run compile:draft maps/mymap.map
 mise run test:diff               # the round-trip gate alone
 mise run test:tapes              # end-to-end scenarios over the MCP surface
+mise run bench:tier2 -- --check   # Tier 2 wiring, without spending anything
 mise run bench                   # the fitness suite
 mise run watch                   # re-run checks on change
 ```
@@ -503,6 +504,7 @@ python/src/nrc_mcp/  the MCP server
 tools/               corpus import, the differential harness, the q3map2 driver, the seam lint,
                      the scenario-tape runner
 bench/tapes/         end-to-end scenarios: tool sequence in, invariants out
+bench/scenarios/     Tier 2 briefs: a model drives the surface, the invariants grade it
 profiles/            game profiles — the only game-specific layer
 corpus/              real, upstream-regression and synthetic maps
 contrib/mcpbridge/   an editor plugin for live editor state (never compiled — see docs/)
@@ -546,13 +548,19 @@ and **it has never been compiled** — there is no Qt5 environment here and the 
 build that codebase at all. It is offered for review, not for use. `docs/editor-bridge.md` explains
 the design; `docs/pr-plan.md` tracks readiness and reports this as unmet.
 
-**No model-in-the-loop test.** `mise run test:tapes` runs five scenarios end to end — build from
-scratch, continue an existing level, refactor one region, an optimisation pass, and one negative
-control that reproduces the `ut4_dofa` clip failure and requires `map_save` to refuse it. Every
-step is a real call into the server. What none of them prove is that a *model* would make those
-calls: the tape is the tool sequence with the model removed, which is exactly why it costs
-nothing to run. Closing that gap means a model driving this MCP against small fixtures, graded by
-the same invariants, and it is not built. `bench/tapes/README.md` says the same thing at length.
+**The model-in-the-loop test has never been run.** `mise run test:tapes` runs five scenarios end
+to end — build from scratch, continue an existing level, refactor one region, an optimisation
+pass, and one negative control that reproduces the `ut4_dofa` clip failure and requires
+`map_save` to refuse it. Every step is a real call into the server, and none of them prove that a
+*model* would make those calls: a tape is the tool sequence with the model removed, which is
+exactly why it costs nothing.
+
+`mise run bench:tier2` is the harness that closes that gap — a model driving this MCP over stdio
+against small fixtures, graded by the same invariants. Its free modes are exercised
+(`--check` starts the server, lists the 48 tools, and verifies every scenario's goal is false on
+the untouched fixture). **`--run` has never executed**, because there are no API credentials on
+the machine it was written on, so nothing here reports a Tier 2 score and none should be inferred.
+`bench/scenarios/README.md` covers the cost controls.
 
 **No kernel self-modification.** The exact predicates, the differential harness, the fitness
 definitions, the corpus and every verified rule are hash-pinned in `bench/protected.json`. The

@@ -1,0 +1,54 @@
+{
+  "name": "seal-the-roofs",
+  "note": "The ut4_dofa task, small, with the brief stated carefully. A plaza with one building whose roof is standable. The roof must stop being standable; the interior and the plaza must not. Both halves are graded, because the failure mode is doing the first and undoing the second.",
+  "fixture": "bench/scenarios/fixtures/plaza_building.map",
+  "prompt": "Open the map at {work}. Players can currently stand on the roof of the building. Make the roof unstandable. Do not take away any space inside the building or out on the plaza \u2014 those must stay exactly as walkable as they are now. Save the map when you are done.",
+  "max_turns": 20,
+  "max_output_tokens": 120000,
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "positions_not_walkable",
+      "args": {
+        "positions": [
+          [
+            384,
+            256,
+            256
+          ]
+        ]
+      }
+    },
+    {
+      "name": "positions_walkable",
+      "args": {
+        "positions": [
+          [
+            384,
+            256,
+            32
+          ],
+          [
+            832,
+            256,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "name": "no_clip_surface_walkable"
+    },
+    {
+      "name": "no_playable_space_regression",
+      "args": {
+        "max_lost_fraction": 0.35
+      }
+    },
+    {
+      "name": "no_new_validation_errors"
+    }
+  ]
+}

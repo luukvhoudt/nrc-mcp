@@ -12,13 +12,14 @@ walkable and not.
 Two findings are errors, because neither has a legitimate form:
 
 ``PLAYSPACE_INTERIOR_SEALED_BY_CLIP``
-    A cell that was walkable *and had a ceiling above it* is now inside a player-clip
-    volume. A roof is sky-exposed by definition, so a cell under a ceiling was never a roof.
-    Roof detection written as an upward probe produces exactly this when the probe's step is
+    A cell that was walkable *and under a roof* is now inside a player-clip volume. Roof
+    detection written as an upward probe produces exactly this when the probe's step is
     larger than a ceiling slab is thick: the probe passes through the ceiling, reports open
     sky, and the "roof" that gets sealed is somebody's shopping mall. Clip is what makes it
     an error rather than an edit — the room still looks walkable, so the player only finds
-    out by walking into it.
+    out by walking into it. Sealing an *outdoor* surface is a real intention and is not this
+    finding; see `_is_indoors` for how the two are told apart, and why "has something above
+    it" is not the test.
 
 ``PLAYSPACE_CLIP_SURFACE_WALKABLE``
     A newly walkable cell is resting on a player-clip brush, and on nothing else. Clip stops
@@ -73,6 +74,11 @@ PLAYER_BLOCKING_CLIP_KEYS = ("player", "both")
 #: Fraction of walkable cells that may vanish before it is worth mentioning on its own.
 #: Below this an edit that removes a room reads as ordinary authoring.
 DEFAULT_LOST_TOLERANCE = 0.02
+
+#: A ceiling this many standing heights up still counts as a ceiling, on a map with no sky
+#: brush to give `_is_indoors` its better signal. Three is a tall room and nothing like the
+#: several hundred units of air over a rooftop.
+NEAR_CEILING_HEIGHTS = 3.0
 
 _SOURCE = "nrc_mcp.playspace: measured before/after, constants from the profile"
 
@@ -155,13 +161,55 @@ def _alignment(before: NavGrid, after: NavGrid) -> tuple[int, int, int]:
 
 
 def _ceiling_distance(grid: NavGrid, cell: tuple[int, int, int]) -> float | None:
-    """Height of the first solid above this cell, or None when it is open to the sky."""
+    """Height of the first solid above this cell, or None when nothing is above it at all."""
     ix, iy, iz = cell
     nz = grid.dims[2]
     for z in range(iz + 1, nz):
         if grid.is_solid(ix, iy, z):
             return (z - iz) * grid.cell
     return None
+
+
+def _topmost_solid(grid: NavGrid, ix: int, iy: int) -> int | None:
+    """Index of the highest solid cell in this column."""
+    for z in range(grid.dims[2] - 1, -1, -1):
+        if grid.is_solid(ix, iy, z):
+            return z
+    return None
+
+
+def _is_indoors(grid: NavGrid, cell: tuple[int, int, int], near: float) -> float | None:
+    """The ceiling distance if this cell is under a roof, else None.
+
+    "Has a solid above it" is not the same question, and getting them confused is easy: a
+    sealed map has a sky brush over everything, and a sky brush is solid to the voxelizer. On
+    `ut4_dofa`, *zero* of 27,965 walkable cells have nothing above them — so a naive test
+    calls every rooftop an interior, and a rule built on it would fire on exactly the roof
+    clipping it was written to permit.
+
+    Two signals, each covering the other's blind spot:
+
+    - **The first solid above is not the topmost solid in the column.** Under a real ceiling
+      there is the ceiling, and then more map, and then the sky. On a rooftop the first thing
+      above *is* the last thing above. This is the reliable signal, and it needs no
+      thresholds and no shader names — but it fails on a map with no sky brush at all, where
+      a room's own ceiling is the topmost solid.
+    - **The gap is small.** Covers that case. A surface with a solid a couple of player
+      heights above it is under something; one with several hundred units of clear air is
+      not.
+
+    Neither is a proof. A warehouse with a 500-unit ceiling in an unsealed map reads as
+    outdoors, which is a missed detection — the safe direction, since
+    `PLAYSPACE_CLIP_SURFACE_WALKABLE` does not depend on this question at all and remains the
+    broad net.
+    """
+    distance = _ceiling_distance(grid, cell)
+    if distance is None:
+        return None
+    ceiling = cell[2] + int(round(distance / grid.cell))
+    if ceiling != _topmost_solid(grid, cell[0], cell[1]):
+        return distance
+    return distance if distance <= near else None
 
 
 def _voxelize(solids: Iterable[Solid], grid: NavGrid) -> set[tuple[int, int, int]]:
@@ -284,15 +332,21 @@ def diff(
     clip_cells = _voxelize(clip_solids, grid_after) if clip_solids else set()
     other_solids = _Lookup(s for s in grid_after.solids if not _is_clip(s, clip_shaders))
 
-    # Interior floor is floor that had a ceiling *before* the edit, so it was never a roof.
-    # What sealed it decides whether this is a defect or ordinary authoring: putting a wall
-    # or a crate somewhere indoors removes floor and is entirely normal, while filling that
-    # space with clip leaves the room looking untouched and walks the player into thin air.
+    # Interior floor is floor that was under a roof *before* the edit — see `_is_indoors`,
+    # and note that "had something above it" is not that test. What sealed it decides whether
+    # this is a defect or ordinary authoring: putting a wall or a crate somewhere indoors
+    # removes floor and is entirely normal, while filling that space with clip leaves the room
+    # looking untouched and walks the player into thin air.
+    near = movement.headroom_stand.value * NEAR_CEILING_HEIGHTS
     sealed_by_clip: list[tuple[int, int, int]] = []
     sealed_by_geometry: list[tuple[int, int, int]] = []
+    sealed_outdoors = 0
     for c in lost:
-        if _ceiling_distance(grid_before, c) is None:
-            continue  # sky above: this was a roof, and sealing a roof is a real intention
+        if _is_indoors(grid_before, c, near) is None:
+            # Open above: a rooftop or a street. Making one unreachable is a real intention,
+            # and `PLAYSPACE_CLIP_SURFACE_WALKABLE` still judges *how* it was done.
+            sealed_outdoors += 1
+            continue
         (
             sealed_by_clip
             if (c[0] + dx, c[1] + dy, c[2] + dz) in clip_cells
@@ -329,7 +383,7 @@ def diff(
                 f"player only finds out by walking into it. Examples: "
                 + "; ".join(
                     f"{_round3(grid_before.centre(c))} "
-                    f"(ceiling {_ceiling_distance(grid_before, c):.0f}u above)"
+                    f"(ceiling {_is_indoors(grid_before, c, near):.0f}u above)"
                     for c in sealed_by_clip[:max_examples]
                 ),
                 confidence,
@@ -425,6 +479,7 @@ def diff(
         "lost_fraction": round(lost_fraction, 4),
         "interior_sealed_by_clip_cells": len(sealed_by_clip),
         "interior_sealed_by_geometry_cells": len(sealed_by_geometry),
+        "outdoor_cells_removed": sealed_outdoors,
         "walkable_on_clip_cells": len(on_clip),
         "clip_shaders_checked": list(clip_shaders),
         "examples": {
@@ -439,6 +494,9 @@ def diff(
         "summary": _summary(findings),
         "notes": [
             f"measured at cell={cell:g}, so a feature narrower than that is not resolved",
+            f"indoors means a ceiling that is not the top of its column, or one within "
+            f"{near:.0f}u; a sky brush is solid here, so 'has something above it' would call "
+            f"every rooftop an interior",
             "brushes the kernel cannot evaluate exactly are absent from both sides; see "
             "geometry.*.brushes_indeterminate",
         ],
@@ -619,6 +677,67 @@ def _validates_clean(check: Check, grid: int = 8) -> Outcome:
     codes = sorted({f["code"] for f in errors})
     return Outcome(
         "validates_clean", not errors, "clean" if not errors else f"{len(errors)}: {codes}"
+    )
+
+
+def _standable_near(grid: NavGrid, position: Sequence[float], tolerance: float) -> float | None:
+    """The z of a walkable surface in this column within `tolerance` of `position`, if any.
+
+    Tolerant on purpose. A walkable cell's standing height is `origin + iz * cell`, and a
+    floor slab 16 units thick under a 32-unit grid does not land on that lattice — asking for
+    an exact z would make every such assertion fail for a reason that has nothing to do with
+    the map. The tolerance is one cell by default, which is the resolution of the answer.
+    """
+    ix, iy, _ = grid.cell_at((position[0], position[1], position[2]))
+    best: float | None = None
+    for iz in grid.columns.get((ix, iy), ()):
+        z = grid.origin[2] + iz * grid.cell
+        if abs(z - position[2]) <= tolerance and (
+            best is None or abs(z - position[2]) < abs(best - position[2])
+        ):
+            best = z
+    return best
+
+
+@invariant("positions_not_walkable")
+def _positions_not_walkable(
+    check: Check, positions: Sequence[Sequence[float]] = (), tolerance: float | None = None
+) -> Outcome:
+    """None of these places can be stood on. "Make the roof unreachable", checked.
+
+    Note what this does *not* say: unreachable. It says not standable. A roof a player can
+    still jump to from a crate is a routing question, and the navgrid's connectivity is the
+    tool for that — this is the narrower claim, and calling it the narrower thing keeps a
+    passing scenario from implying more than was measured.
+    """
+    grid = build_navgrid(_require_current(check), cell=check.cell, profile_id=check.profile_id)
+    tol = check.cell if tolerance is None else float(tolerance)
+    still = [
+        (list(p), _standable_near(grid, p, tol))
+        for p in positions
+        if _standable_near(grid, p, tol) is not None
+    ]
+    return Outcome(
+        "positions_not_walkable",
+        not still,
+        f"all {len(positions)} clear"
+        if not still
+        else "; ".join(f"{p} still standable at z={z:.0f}" for p, z in still[:4]),
+    )
+
+
+@invariant("positions_walkable")
+def _positions_walkable(
+    check: Check, positions: Sequence[Sequence[float]] = (), tolerance: float | None = None
+) -> Outcome:
+    """All of these places can still be stood on. The other half of a sealing task."""
+    grid = build_navgrid(_require_current(check), cell=check.cell, profile_id=check.profile_id)
+    tol = check.cell if tolerance is None else float(tolerance)
+    gone = [list(p) for p in positions if _standable_near(grid, p, tol) is None]
+    return Outcome(
+        "positions_walkable",
+        not gone,
+        f"all {len(positions)} standable" if not gone else f"no longer standable: {gone[:4]}",
     )
 
 

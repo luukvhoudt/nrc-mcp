@@ -1,0 +1,31 @@
+{
+  "name": "continue-existing-level",
+  "note": "Add to a finished map without costing the old work anything. The walkable-area floor is set above what the fixture already has, so doing nothing fails.",
+  "fixture": "corpus/real/ut4_woolis.map",
+  "prompt": "Open the map at {work}. Add one new enclosed room, roughly 512 by 512 units and 256 tall, somewhere clear of the existing geometry, with a doorway in one wall. Leave everything already in the map exactly as it is. Save when done.",
+  "max_turns": 20,
+  "max_output_tokens": 120000,
+  "invariants": [
+    {
+      "name": "round_trip_identical"
+    },
+    {
+      "name": "walkable_area_at_least",
+      "args": {
+        "cells": 22500
+      }
+    },
+    {
+      "name": "no_playable_space_regression",
+      "args": {
+        "max_lost_fraction": 0.01
+      }
+    },
+    {
+      "name": "no_clip_surface_walkable"
+    },
+    {
+      "name": "no_new_validation_errors"
+    }
+  ]
+}
